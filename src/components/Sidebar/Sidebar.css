@@ -1,0 +1,97 @@
+/* src/components/Sidebar/Sidebar.css */
+.sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 300px;
+    background-color: white;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+    transition: width 0.3s ease;
+    overflow-y: auto;
+  }
+  
+  .sidebar.collapsed {
+    width: 50px;
+  }
+  
+  .sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .sidebar-header h2 {
+    margin: 0;
+    font-size: 20px;
+    color: #2c3e50;
+  }
+  
+  .collapse-button {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #2c3e50;
+  }
+  
+  .sidebar-section {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .sidebar-section h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 16px;
+    color: #2c3e50;
+  }
+  
+  .layer-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .layer-control {
+    display: flex;
+    align-items: center;
+  }
+  
+  .layer-control input {
+    margin-right: 10px;
+  }
+  
+  .analysis-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .analysis-button {
+    padding: 8px 12px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .analysis-button:hover {
+    background-color: #2980b9;
+  }
+  
+  .info-panel {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  
+  .info-panel p {
+    margin: 5px 0;
+  }
