@@ -1,25 +1,21 @@
-import React, { useState } from 'react';
-// import { useSelector, useDispatch } from 'react-redux';
+import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 // import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, Popup, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
-import {GeoJsonLayer, ArcLayer} from 'deck.gl';
+import {GeoJsonLayer} from 'deck.gl';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
 // import LandUseLayer from './LandUseLayer';
 // import MapControls from './MapControls';
 // import { selectFeature } from '../../store/actions/selectionActions';
 
-// source: Natural Earth http://www.naturalearthdata.com/ via geojson.xyz
-const AIR_PORTS =
-  'https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_10m_airports.geojson';
-
 const INITIAL_VIEW_STATE = {
-  latitude: 51.47,
-  longitude: 0.45,
-  zoom: 4,
+  latitude: 44.029,
+  longitude: 1.135,
+  zoom: 10,
   bearing: 0,
-  pitch: 30
+  pitch: 0
 };
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
@@ -31,48 +27,65 @@ function DeckGLOverlay(props) {
 }
 
 function Map() {
+  const [geoJsonData, setGeoJsonData] = useState(null);
   const [selected, setSelected] = useState(null);
 
+  const activeFilters = useSelector((state) => state.map.activeL1Filters); // Access active filters from Redux
+
+
+  // Load GeoJSON data
+  useEffect(() => {
+    async function loadGeoJson() {
+      try {
+        const response = await fetch('./data/Tarn_LULC_v04.geojson');
+        const data = await response.json();
+        setGeoJsonData(data);
+      } catch (error) {
+        console.error('Error loading GeoJSON:', error);
+      }
+    }
+    loadGeoJson();
+  }, []);
+
   const layers = [
-    new GeoJsonLayer({
-      id: 'airports',
-      data: AIR_PORTS,
-      // Styles
-      filled: true,
-      pointRadiusMinPixels: 2,
-      pointRadiusScale: 2000,
-      getPointRadius: f => 11 - f.properties.scalerank,
-      getFillColor: [200, 0, 80, 180],
-      // Interactive props
-      pickable: true,
-      autoHighlight: true,
-      onClick: info => setSelected(info.object)
-      // beforeId: 'watername_ocean' // In interleaved mode, render the layer under map labels
-    }),
-    new ArcLayer({
-      id: 'arcs',
-      data: AIR_PORTS,
-      dataTransform: d => d.features.filter(f => f.properties.scalerank < 4),
-      // Styles
-      getSourcePosition: f => [-0.4531566, 51.4709959], // London
-      getTargetPosition: f => f.geometry.coordinates,
-      getSourceColor: [0, 128, 200],
-      getTargetColor: [200, 0, 80],
-      getWidth: 1
-    })
+    geoJsonData &&
+      new GeoJsonLayer({
+        id: 'geojson-layer',
+        data: geoJsonData.features.filter((feature) =>
+          activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
+        ),
+        filled: true,
+        getFillColor: (feature) => {
+          // Map L1_Label to a color
+          const label = feature.properties.L1_label;
+          switch (label) {
+            case 'Forest':
+              return [34, 139, 34, 180]; // Green
+            case 'Water':
+              return [0, 0, 255, 180]; // Blue
+            case 'Developed':
+              return [128, 128, 128, 180]; // Gray
+            default:
+              return [200, 200, 200, 180]; // Default color
+          }
+        },
+        pickable: true,
+        autoHighlight: true,
+        onClick: (info) => setSelected(info.object),
+      }),
   ];
 
   return (
     <MapLibre initialViewState={INITIAL_VIEW_STATE} mapStyle={MAP_STYLE}>
       {selected && (
         <Popup
-          key={selected.properties.name}
+          key={selected.properties.L1_label}
           anchor="bottom"
           style={{zIndex: 10}} /* position above deck.gl canvas */
-          longitude={selected.geometry.coordinates[0]}
-          latitude={selected.geometry.coordinates[1]}
+          longitude={selected.geometry.coordinates[0][0][0]}
+          latitude={selected.geometry.coordinates[0][0][1]}
         >
-          {selected.properties.name} ({selected.properties.abbrev})
+          <div>{selected.properties.L1_label}</div>
         </Popup>
       )}
       <DeckGLOverlay layers={layers} /* interleaved*/ />

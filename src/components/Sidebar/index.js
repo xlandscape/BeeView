@@ -1,101 +1,43 @@
-// src/components/Sidebar/index.js
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import './Sidebar.css';
-import { toggleLayer } from '../../store/slices/mapSlice';
+import { toggleL1Filter } from '../../store/slices/mapSlice';
 
 const Sidebar = () => {
   const dispatch = useDispatch();
-  const visibleLayers = useSelector(state => state.map.visibleLayers);
+  const activeFilters = useSelector(state => state.map.activeL1Filters);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const handleLayerToggle = (layerName) => {
-    dispatch(toggleLayer(layerName));
+  const handleFilterToggle = (label) => {
+    dispatch(toggleL1Filter(label));
+  };
+
+  const toggleSidebar = () => {
+    setIsCollapsed(!isCollapsed);
   };
 
   return (
-    <div className={`sidebar \${isCollapsed ? 'collapsed' : ''}`}>
-      <div className="sidebar-header">
-        <h2>BeeView</h2>
-        <button 
-          className="collapse-button" 
-          onClick={() => setIsCollapsed(!isCollapsed)}
-        >
-          {isCollapsed ? '›' : '‹'}
-        </button>
-      </div>
-      
+    <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
+      <button className="toggle-button" onClick={toggleSidebar}>
+        {isCollapsed ? '>' : '<'}
+      </button>
       {!isCollapsed && (
-        <>
-          <div className="sidebar-section">
-            <h3>Layers</h3>
-            <div className="layer-controls">
-              <div className="layer-control">
-                <input 
-                  type="checkbox" 
-                  id="landUseLayer" 
-                  checked={visibleLayers.landUse || false} 
-                  onChange={() => handleLayerToggle('landUse')}
+        <div className="sidebar-content">
+          <h3>Filter by L1 Label</h3>
+          <div className="filter-controls">
+            {['Forest', 'Water', 'Developed', 'Arable', 'Other'].map((label) => (
+              <div key={label} className="filter-control">
+                <input
+                  type="checkbox"
+                  id={`filter-${label}`}
+                  checked={activeFilters.includes(label)}
+                  onChange={() => handleFilterToggle(label)}
                 />
-                <label htmlFor="landUseLayer">Land Use</label>
+                <label htmlFor={`filter-${label}`}>{label}</label>
               </div>
-              <div className="layer-control">
-                <input 
-                  type="checkbox" 
-                  id="resourceLayer" 
-                  checked={visibleLayers.resources || false} 
-                  onChange={() => handleLayerToggle('resources')}
-                />
-                <label htmlFor="resourceLayer">Nectar & Pollen Resources</label>
-              </div>
-              <div className="layer-control">
-                <input 
-                  type="checkbox" 
-                  id="hivesLayer" 
-                  checked={visibleLayers.hives || false} 
-                  onChange={() => handleLayerToggle('hives')}
-                />
-                <label htmlFor="hivesLayer">Bee Hives</label>
-              </div>
-              <div className="layer-control">
-                <input 
-                  type="checkbox" 
-                  id="flightPathsLayer" 
-                  checked={visibleLayers.flightPaths || false} 
-                  onChange={() => handleLayerToggle('flightPaths')}
-                />
-                <label htmlFor="flightPathsLayer">Flight Paths</label>
-              </div>
-              <div className="layer-control">
-                <input 
-                  type="checkbox" 
-                  id="exposureLayer" 
-                  checked={visibleLayers.exposure || false} 
-                  onChange={() => handleLayerToggle('exposure')}
-                />
-                <label htmlFor="exposureLayer">Pesticide Exposure</label>
-              </div>
-            </div>
+            ))}
           </div>
-          
-          <div className="sidebar-section">
-            <h3>Analysis</h3>
-            <div className="analysis-controls">
-              <button className="analysis-button">Calculate Foraging Area</button>
-              <button className="analysis-button">Resource Availability</button>
-              <button className="analysis-button">Export Data</button>
-            </div>
-          </div>
-          
-          <div className="sidebar-section">
-            <h3>Information</h3>
-            <div className="info-panel">
-              <p><strong>Selected Feature:</strong> <span id="selected-feature">None</span></p>
-              <p><strong>Land Use Area:</strong> <span id="land-use-area">0 ha</span></p>
-              <p><strong>Resource Quality:</strong> <span id="resource-quality">N/A</span></p>
-            </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -3,16 +3,16 @@
     "version": "0.1.0",
     "private": true,
     "dependencies": {
-        "deck.gl": "^9.0.0",
-        "@deck.gl/mapbox":"9.1.11",
+        "@deck.gl/mapbox": "9.1.11",
+        "@reduxjs/toolkit": "^2.8.0",
         "@turf/turf": "^6.5.0",
         "d3": "^7.8.5",
+        "deck.gl": "^9.0.0",
         "maplibre-gl": "^5.0.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "react-map-gl": "^8.0.4",
-        "react-redux": "^8.1.1",
-        "@reduxjs/toolkit":"^2.8.0"
+        "react-redux": "^8.1.1"
     },
     "devDependencies": {
         "@babel/core": "^7.27.1",
@@ -20,6 +20,8 @@
         "@babel/preset-react": "^7.27.1",
         "babel-loader": "^9.2.1",
         "css-loader": "^6.8.1",
+        "electron": "^36.2.1",
+        "electron-builder": "^26.0.12",
         "html-webpack-plugin": "^5.5.3",
         "style-loader": "^3.3.3",
         "webpack": "^5.88.0",
