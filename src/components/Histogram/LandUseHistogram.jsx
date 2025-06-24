@@ -8,7 +8,8 @@ import { analyzeLandUseData } from '../../utils/landUseAnalysis';
 function LandUseHistogram() {
   const svgRef = useRef(null);
   const landUseData = useSelector(state => state.map.landUseData);
-  const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
+  // const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
+  const activeFilters = useSelector(state => state.map.activeL1Filters);
   const dispatch = useDispatch();
 
   useEffect(() => {
@@ -16,7 +17,7 @@ function LandUseHistogram() {
 
     // Analyze land use data
     const landUseStats = analyzeLandUseData(landUseData);
-    
+
     // Clear previous chart
     d3.select(svgRef.current).selectAll("*").remove();
 
@@ -28,7 +29,7 @@ function LandUseHistogram() {
     // Create SVG
     const svg = d3.select(svgRef.current)
       .append("g")
-      .attr("transform", `translate(\${margin.left},\${margin.top})`);
+      .attr("transform", `translate(${margin.left},${margin.top})`);
 
     // Set up scales
     const x = d3.scaleBand()
@@ -43,7 +44,7 @@ function LandUseHistogram() {
 
     // Draw axes
     svg.append("g")
-      .attr("transform", `translate(0,\${height})`)
+      .attr("transform", `translate(0,${height})`)
       .call(d3.axisBottom(x))
       .selectAll("text")
       .attr("transform", "rotate(-45)")
@@ -78,15 +79,15 @@ function LandUseHistogram() {
       .attr("height", d => height - y(d.area))
       .attr("fill", d => {
         const color = getLandUseColor(d.type);
-        return `rgba(\${color[0]}, \${color[1]}, \${color[2]}, 0.8)`;
+        return `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.8)`;
       })
       .attr("stroke", d => {
         // Highlight if any feature of this type is selected
-        const isSelected = d.featureIds.some(id => selectedFeatureIds.includes(id));
+        const isSelected = activeFilters.includes(d.type);
         return isSelected ? "#000" : "none";
       })
       .attr("stroke-width", d => {
-        const isSelected = d.featureIds.some(id => selectedFeatureIds.includes(id));
+        const isSelected = activeFilters.includes(d.type);
         return isSelected ? 2 : 0;
       })
       .on("click", (event, d) => {
@@ -94,12 +95,12 @@ function LandUseHistogram() {
         d.featureIds.forEach(id => dispatch(selectFeature(id)));
       });
 
-  }, [landUseData, selectedFeatureIds, dispatch]);
+  }, [landUseData, activeFilters, dispatch]);
 
   return (
     <div className="histogram-container">
       <h3>Land Use Distribution</h3>
-      <svg ref={svgRef} width="100%" height="200"></svg>
+      <svg ref={svgRef} width="100%" height="250"></svg>
     </div>
   );
 }

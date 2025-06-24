@@ -1,17 +1,45 @@
-/* filepath: c:\Users\ghzdr\xLandscape\xBeeForage\analysis\beeview\src\App.css */
 .app-container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  
-  .main-content {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-  }
-  
-  .map-container {
-    flex: 1;
-    position: relative;
-  }
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 250px;
+  background: #f4f4f4;
+  border-right: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+}
+
+.content-area {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.map-container {
+  flex: 3;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.histogram-container {
+  flex: 1;
+  min-width: 300px;
+  background: #fff;
+  border-left: 1px solid #ccc;
+  padding: 16px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}

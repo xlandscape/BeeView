@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import { setLandUseData } from '../../store/slices/mapSlice';
 // import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, Popup, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
 import {GeoJsonLayer} from 'deck.gl';
+import { getLandUseColor } from '../../utils/colorScales';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
 // import LandUseLayer from './LandUseLayer';
@@ -27,6 +29,7 @@ function DeckGLOverlay(props) {
 }
 
 function Map() {
+  const dispatch = useDispatch();
   const [geoJsonData, setGeoJsonData] = useState(null);
   const [selected, setSelected] = useState(null);
 
@@ -40,12 +43,13 @@ function Map() {
         const response = await fetch('./data/Tarn_LULC_v04.geojson');
         const data = await response.json();
         setGeoJsonData(data);
+        dispatch(setLandUseData(data));
       } catch (error) {
         console.error('Error loading GeoJSON:', error);
       }
     }
     loadGeoJson();
-  }, []);
+  }, [dispatch]);
 
   const layers = [
     geoJsonData &&

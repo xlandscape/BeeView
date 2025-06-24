@@ -2,7 +2,8 @@ import React from 'react';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-// import LandUseHistogram from './components/Histogram/LandUseHistogram';
+import LandUseHistogram from './components/Histogram/LandUseHistogram';
+import './App.css';
 
 function App() {
   return (
@@ -10,8 +11,11 @@ function App() {
       <Header />
       <div className="main-content">
         <Sidebar />
-        <div className="map-container">
-          <Map />
+        <div className="content-area">
+          <div className="map-container">
+            <Map />
+          </div>
+          <LandUseHistogram />
         </div>
       </div>
     </div>
