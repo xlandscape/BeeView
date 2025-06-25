@@ -1,10 +1,13 @@
 import { configureStore } from '@reduxjs/toolkit';
-import rootReducer from './reducers';
 import mapReducer from './slices/mapSlice';
+import layerReducer from './slices/layerSlice'; // <-- Import your new slice
+import selectionReducer from './reducers/selectionReducer'; 
 
 const store = configureStore({
   reducer: {
-    map: mapReducer, // Add the map slice here
+    map: mapReducer,
+    layers: layerReducer,
+    selection: selectionReducer,
   },
 });
 

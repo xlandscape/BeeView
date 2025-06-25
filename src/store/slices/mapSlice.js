@@ -5,6 +5,7 @@ const mapSlice = createSlice({
   initialState: {
     activeL1Filters: [], // Tracks active L1_label filters
     landUseData: null,
+    nectarMax: null,
   },
   reducers: {
     toggleL1Filter: (state, action) => {
@@ -17,9 +18,12 @@ const mapSlice = createSlice({
     },
     setLandUseData: (state, action) => {
       state.landUseData = action.payload;
+    },
+    setNectarMax: (state, action) => { 
+      state.nectarMax = action.payload;
     }
   },
 });
 
-export const { toggleL1Filter, setLandUseData } = mapSlice.actions;
+export const { toggleL1Filter, setLandUseData, setNectarMax } = mapSlice.actions;
 export default mapSlice.reducer;

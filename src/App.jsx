@@ -3,6 +3,7 @@ import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import LandUseHistogram from './components/Histogram/LandUseHistogram';
+import TimeSeriesChart from './components/TimeSeriesChart';
 import './App.css';
 
 function App() {
@@ -15,7 +16,10 @@ function App() {
           <div className="map-container">
             <Map />
           </div>
-          <LandUseHistogram />
+          <div className="chart-stack">
+            <LandUseHistogram />
+            <TimeSeriesChart />
+          </div>
         </div>
       </div>
     </div>
