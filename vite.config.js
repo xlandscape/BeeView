@@ -21,6 +21,7 @@ export default defineConfig({
           main: path.resolve(__dirname, 'index.html'),
         },
       },
+    target: 'esnext', // Use modern JavaScript features
   },
   
 });
