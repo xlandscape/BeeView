@@ -1,15 +1,17 @@
 /* filepath: c:\Users\ghzdr\xLandscape\xBeeForage\analysis\beeview\src\components\Sidebar\Sidebar.css */
 .sidebar {
-  width: 250px;
-  transition: width 0.3s ease;
+  width: 200px;
+  transition: width 0.2s;
   background-color: #f4f4f4;
   border-right: 1px solid #ddd;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  /* display: flex;
+  flex-direction: column; */
 }
 
 .sidebar.collapsed {
-  width: 50px;
+  width: 32px; /* Only show the toggle button */
+  overflow: hidden;
 }
 
 .toggle-button {

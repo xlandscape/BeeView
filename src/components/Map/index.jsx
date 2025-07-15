@@ -42,7 +42,7 @@ function Map() {
   useEffect(() => {
     async function loadGeoJson() {
       try {
-        const data = await fetch('http://localhost:8080/geojson').then(res => res.json());
+        const data = await fetch('http://127.0.0.1:8080/geojson').then(res => res.json());
         if (!data || !data.features) {
           throw new Error('Invalid GeoJSON data');
         }
@@ -59,7 +59,7 @@ function Map() {
   useEffect(() => {
     async function loadNectarMax() {
       try {
-        const nectarMaxValues = await fetch('http://localhost:8080/nectar/max').then(res => res.json());
+        const nectarMaxValues = await fetch('http://127.0.0.1:8080/nectar/max').then(res => res.json());
         // console.log(nectarMaxValues["max_nectar"][0]);
         setNectarData(nectarMaxValues["max_nectar"]);
         dispatch(setNectarMax(nectarMaxValues["max_nectar"]));

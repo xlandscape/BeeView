@@ -66,16 +66,6 @@ function TimeSeriesChart() {
         .attr("d", line);
     });
 
-    // Legend
-    svg.selectAll(".legend")
-      .data(seriesData)
-      .enter()
-      .append("text")
-      .attr("x", width - 80)
-      .attr("y", (d, i) => 20 + i * 20)
-      .attr("fill", (d, i) => color(i))
-      .text(d => `Feature ${d.id}`);
-
   }, [seriesData]);
 
   return (
