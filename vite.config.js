@@ -13,6 +13,7 @@ export default defineConfig({
   server: {
     open: true, // Automatically open the browser
     port: 3000, // Specify the development server port
+    allowedHosts: ['.'], // Allow all hosts
   },
   build: {
     outDir: 'dist', // Output directory for production build

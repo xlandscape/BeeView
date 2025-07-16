@@ -17,8 +17,8 @@ function App() {
             <Map />
           </div>
           <div className="chart-stack">
-            <LandUseHistogram />
-            <TimeSeriesChart />
+            {/* <LandUseHistogram /> */}
+            {/* <TimeSeriesChart /> */}
           </div>
         </div>
       </div>
