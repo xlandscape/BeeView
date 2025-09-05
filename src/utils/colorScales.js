@@ -27,6 +27,18 @@ export const getNectarColor = (value) => {
   return [r, g, b, 180]; // RGBA, alpha=180 for some transparency 
 };
 
+export const getPollenColor = (value) => {
+  const min = 0;
+  const max = 0.0001000001;
+  // Clamp and normalize value
+  const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  // Interpolate: white to red
+  const r = 255;
+  const g = Math.round(255 * (1 - t));
+  const b = Math.round(255 * (1 - t));
+  return [r, g, b, 180]; // RGBA, alpha=180 for some transparency 
+};
+
 // Generate a color scale for continuous values
 export const generateColorScale = (domain, colorRange) => {
   return d3.scaleLinear()

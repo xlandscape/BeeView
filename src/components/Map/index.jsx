@@ -5,7 +5,7 @@ import { setLandUseData, setNectarMax } from '../../store/slices/mapSlice';
 import {Map as MapLibre, NavigationControl, Popup, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
 import {GeoJsonLayer} from 'deck.gl';
-import { getLandUseColor, getNectarColor } from '../../utils/colorScales';
+import { getLandUseColor, getNectarColor, getPollenColor } from '../../utils/colorScales';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
 // import LandUseLayer from './LandUseLayer';
@@ -33,11 +33,12 @@ function Map() {
   const dispatch = useDispatch();
   const [geoJsonData, setGeoJsonData] = useState(null);
   const [nectarMax, setNectarData] = useState(null);
+  const [pollenMax, setPollenData] = useState(null);
   const [selected, setSelected] = useState(null);
 
-  const activeFilters = useSelector((state) => state.map.activeL1Filters); // Access active filters from Redux
+  const activeFilters = useSelector((state) => state.map.activeL1Filters);
   const layerVisibility = useSelector(state => state.layers);
-  
+
   // Load GeoJSON data
   useEffect(() => {
     async function loadGeoJson() {
@@ -74,6 +75,24 @@ function Map() {
     loadNectarMax();
   }, [dispatch]);
 
+  // Load Pollen max values
+  useEffect(() => {
+    async function loadPollenMax() {
+      try {
+        const pollenMaxValues = await fetch('http://127.0.0.1:8080/pollen/max').then(res => res.json());
+        // Convert array to lookup object
+        const pollenMaxLookup = {};
+        pollenMaxValues["max_pollen"].forEach(item => {
+          pollenMaxLookup[item.feature_id] = item.max_pollen;
+        });
+        setPollenData(pollenMaxLookup);
+      } catch (error) {
+        console.error('Error loading Pollen max values:', error);
+      }
+    }
+    loadPollenMax();
+  }, [dispatch]);
+
   const layers = [
     layerVisibility.LULC.visible && 
     geoJsonData &&
@@ -90,8 +109,8 @@ function Map() {
         autoHighlight: true,
         onClick: (info) => setSelected(info.object),
       }),
-      layerVisibility.Nectar.visible && 
-      nectarMax &&
+    layerVisibility.Nectar.visible && 
+    nectarMax &&
       new GeoJsonLayer({ 
         id: 'nectar-layer',
         data: geoJsonData.features.filter((feature) =>
@@ -99,9 +118,7 @@ function Map() {
         ),
         filled: true,
         getFillColor: (feature, {index}) => {
-          console.log(nectarMax)
           if (!nectarMax || !nectarMax[feature.id]) {
-            // fallback color (e.g., gray or transparent)
             return [200, 200, 200, 100];
           }
           const nectar = nectarMax[feature.id];
@@ -111,7 +128,29 @@ function Map() {
         autoHighlight: true,
         onClick: info => {
           if (info.object) {
-            // Toggle selection or select multiple as needed
+            dispatch(selectFeature([info.object.id]));
+          }
+        },
+      }),
+    layerVisibility.Pollen?.visible && 
+    pollenMax &&
+      new GeoJsonLayer({ 
+        id: 'pollen-layer',
+        data: geoJsonData.features.filter((feature) =>
+          activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
+        ),
+        filled: true,
+        getFillColor: (feature, {index}) => {
+          if (!pollenMax || !pollenMax[feature.id]) {
+            return [200, 200, 200, 100];
+          }
+          const pollen = pollenMax[feature.id];
+          return typeof getPollenColor === 'function' ? getPollenColor(pollen) : [255, 200, 0, 180];
+        },
+        pickable: true,
+        autoHighlight: true,
+        onClick: info => {
+          if (info.object) {
             dispatch(selectFeature([info.object.id]));
           }
         },
