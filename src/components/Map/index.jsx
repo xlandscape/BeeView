@@ -84,7 +84,10 @@ function Map() {
       },
         pickable: true,
         autoHighlight: true,
-        onClick: (info) => setSelected(info.object),
+        onClick: (info) => {
+          console.log(info.object);
+          setSelected(info.object);
+        },
       }),
       layerVisibility.Nectar.visible && new GeoJsonLayer({ 
         id: 'nectar-layer',
@@ -123,8 +126,8 @@ function Map() {
           key={selected.properties.L1_label}
           anchor="bottom"
           style={{zIndex: 10}} /* position above deck.gl canvas */
-          longitude={selected.geometry.coordinates[0][0][0]}
-          latitude={selected.geometry.coordinates[0][0][1]}
+          longitude={selected.geometry.coordinates[0][0][0][0]}
+          latitude={selected.geometry.coordinates[0][0][0][1]}
         >
           <div>{selected.properties.L1_label}</div>
         </Popup>

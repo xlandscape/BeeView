@@ -53,7 +53,13 @@ export const analyzeLandUseData = (landUseData) => {
     if (!area) {
       area = group.features.reduce((sum, feat) => {
         if (feat.geometry && (feat.geometry.type === 'Polygon' || feat.geometry.type === 'MultiPolygon')) {
-          return sum + turf.area(feat) / 10000;
+          const feature = {
+            type: "Feature",
+            geometry: feat.geometry,
+            properties: feat.properties || {}
+          };
+          console.log(feature);
+          return sum + turf.area(feature) / 10000;
         }
         return sum;
       }, 0);
