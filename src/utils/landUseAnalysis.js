@@ -58,7 +58,6 @@ export const analyzeLandUseData = (landUseData) => {
             geometry: feat.geometry,
             properties: feat.properties || {}
           };
-          console.log(feature);
           return sum + turf.area(feature) / 10000;
         }
         return sum;

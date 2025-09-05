@@ -60,9 +60,13 @@ function Map() {
     async function loadNectarMax() {
       try {
         const nectarMaxValues = await fetch('http://127.0.0.1:8080/nectar/max').then(res => res.json());
-        // console.log(nectarMaxValues["max_nectar"][0]);
-        setNectarData(nectarMaxValues["max_nectar"]);
-        dispatch(setNectarMax(nectarMaxValues["max_nectar"]));
+        // Convert array to lookup object
+        const nectarMaxLookup = {};
+        nectarMaxValues["max_nectar"].forEach(item => {
+          nectarMaxLookup[item.feature_id] = item.max_nectar;
+        });
+        setNectarData(nectarMaxLookup);
+        dispatch(setNectarMax(nectarMaxLookup));
       } catch (error) {
         console.error('Error loading Nectar max values:', error);
       }
@@ -84,19 +88,18 @@ function Map() {
       },
         pickable: true,
         autoHighlight: true,
-        onClick: (info) => {
-          console.log(info.object);
-          setSelected(info.object);
-        },
+        onClick: (info) => setSelected(info.object),
       }),
-      layerVisibility.Nectar.visible && new GeoJsonLayer({ 
+      layerVisibility.Nectar.visible && 
+      nectarMax &&
+      new GeoJsonLayer({ 
         id: 'nectar-layer',
         data: geoJsonData.features.filter((feature) =>
           activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
         ),
         filled: true,
         getFillColor: (feature, {index}) => {
-          // console.log(nectarMax[feature.id])
+          console.log(nectarMax)
           if (!nectarMax || !nectarMax[feature.id]) {
             // fallback color (e.g., gray or transparent)
             return [200, 200, 200, 100];
