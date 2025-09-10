@@ -6,6 +6,8 @@ const mapSlice = createSlice({
     activeL1Filters: [], // Tracks active L1_label filters
     landUseData: null,
     nectarMax: null,
+    beePopulationData: null,
+    beePopulationMetrics: [],
   },
   reducers: {
     toggleL1Filter: (state, action) => {
@@ -21,9 +23,15 @@ const mapSlice = createSlice({
     },
     setNectarMax: (state, action) => { 
       state.nectarMax = action.payload;
+    },
+    setBeePopulationData: (state, action) => {
+      state.beePopulationData = action.payload;
+    },
+    setBeePopulationMetrics: (state, action) => {
+      state.beePopulationMetrics = action.payload;
     }
   },
 });
 
-export const { toggleL1Filter, setLandUseData, setNectarMax } = mapSlice.actions;
+export const { toggleL1Filter, setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics } = mapSlice.actions;
 export default mapSlice.reducer;

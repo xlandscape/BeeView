@@ -1,23 +1,25 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setLandUseData, setNectarMax } from '../../store/slices/mapSlice';
+import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics } from '../../store/slices/mapSlice';
 // import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, Popup, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
 import {GeoJsonLayer} from 'deck.gl';
-import { getLandUseColor, getNectarColor, getPollenColor } from '../../utils/colorScales';
+import { getLandUseColor, getNectarColor, getPollenColor, getBeePopulationColor, getBeePopulationMaxValues } from '../../utils/colorScales';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
 // import LandUseLayer from './LandUseLayer';
 // import MapControls from './MapControls';
 import { selectFeature } from '../../store/reducers/selectionReducer';
-import { loadViewportData, debounce, getViewportConfig, setViewportConfig } from '../../utils/viewportLoader';
+import { loadViewportData, loadViewportDataForTimePoint, loadTimePointData, loadBeePopulationData, loadBeePopulationTimeSeries, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
 
 // Disable viewport queries (for debugging)
 // Only enable this if you know what you are doing, as viewport queries
 // will restrict the data that is loaded to the current viewport and will
 // have the side effect that all statistical graphs will adapt accordingly
-setViewportConfig({ USE_VIEWPORT_QUERIES: false });
+setViewportConfig({ USE_VIEWPORT_QUERIES: false,
+  ENABLE_CACHING: true  // Enable caching to prevent redundant API calls
+ });
 
 const INITIAL_VIEW_STATE = {
   latitude: 44.029,
@@ -45,9 +47,14 @@ function Map() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastZoom, setLastZoom] = useState(INITIAL_VIEW_STATE.zoom);
+  const lastProcessedTimePoint = useRef(null);
+  const [beePopulationData, setBeePopulationDataState] = useState(null);
+  const [beePopulationTimeSeries, setBeePopulationTimeSeries] = useState(null);
+  const [beePopulationMaxValues, setBeePopulationMaxValues] = useState({});
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
   const layerVisibility = useSelector(state => state.layers);
+  const { selectedTimePoint } = useSelector(state => state.time);
 
   // Debounced viewport data loading with longer delay for zoom changes
   const debouncedLoadViewportData = useCallback(
@@ -59,6 +66,9 @@ function Map() {
       
       try {
         console.log('Loading viewport data for:', currentViewState, 'interaction:', interactionType);
+        
+        // Load full dataset (GeoJSON + max nectar/pollen values)
+        console.log('Loading full viewport data (GeoJSON + max values)');
         const data = await loadViewportData(currentViewState);
         
         setGeoJsonData(data.geoJson);
@@ -76,17 +86,114 @@ function Map() {
         setLoading(false);
       }
     }, 1500), // 1.5 second debounce for stability
-    [] // Remove dispatch from dependencies
+    [] // No dependencies - this only loads GeoJSON and max values
   );
 
-  // Load initial viewport data only once
+  // Separate function for loading only time-specific data
+  const debouncedLoadTimePointData = useCallback(
+    debounce(async (currentViewState, timePoint) => {
+      if (!currentViewState || !timePoint) return;
+      
+      setLoading(true);
+      setError(null);
+      
+      try {
+        console.log(`Loading time-specific data for time point: ${timePoint}`);
+        
+        // Load only nectar/pollen data for the specific time point
+        const timeData = await loadTimePointData(currentViewState, timePoint);
+        
+        // Update only nectar and pollen data, keep existing GeoJSON
+        setNectarData(timeData.nectar);
+        setPollenData(timeData.pollen);
+        
+        // Update Redux store with new nectar data
+        dispatch(setNectarMax(timeData.nectar));
+        
+      } catch (err) {
+        console.error('Error loading time-specific data:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }, 800), // Shorter debounce for time changes (more responsive)
+    [] // No dependencies
+  );
+
+  // Load initial viewport data only once (GeoJSON + max values)
   useEffect(() => {
+    console.log('Loading initial GeoJSON and max values data...');
     debouncedLoadViewportData(INITIAL_VIEW_STATE);
   }, []); // Empty dependency array - run only once
+
+  // Load time-specific data when selected time point changes
+  useEffect(() => {
+    console.log('Map component: selectedTimePoint changed to:', selectedTimePoint);
+    
+    // Skip if no time point selected or if it's the same as last processed
+    if (!selectedTimePoint || selectedTimePoint === lastProcessedTimePoint.current) {
+      return;
+    }
+    
+    // Check if viewport queries are disabled and we have cached data
+    const config = getViewportConfig();
+    if (!config.USE_VIEWPORT_QUERIES && config.ENABLE_CACHING && isFullDatasetCached(selectedTimePoint)) {
+      console.log(`Cached time-specific data available for time point ${selectedTimePoint} - skipping API call`);
+      lastProcessedTimePoint.current = selectedTimePoint;
+      return;
+    }
+    
+    console.log('Loading time-specific nectar/pollen data for time point:', selectedTimePoint);
+    lastProcessedTimePoint.current = selectedTimePoint;
+    debouncedLoadTimePointData(viewState || INITIAL_VIEW_STATE, selectedTimePoint);
+  }, [selectedTimePoint, debouncedLoadTimePointData]);
+
+  // Load bee population data when selected time point changes
+  useEffect(() => {
+    if (selectedTimePoint) {
+      const loadBeeData = async () => {
+        try {
+          const data = await loadBeePopulationData(selectedTimePoint);
+          setBeePopulationDataState(data);
+          dispatch(setBeePopulationData(data));
+        } catch (error) {
+          console.error('Failed to load bee population data:', error);
+        }
+      };
+      loadBeeData();
+    }
+  }, [selectedTimePoint, dispatch]);
+
+  // Load bee population time series and metrics on mount
+  useEffect(() => {
+    const loadBeeMetadata = async () => {
+      try {
+        const [timeSeries, metrics] = await Promise.all([
+          loadBeePopulationTimeSeries(),
+          loadBeePopulationMetrics()
+        ]);
+        
+        setBeePopulationTimeSeries(timeSeries);
+        setBeePopulationMaxValues(getBeePopulationMaxValues(timeSeries));
+        dispatch(setBeePopulationMetrics(metrics));
+      } catch (error) {
+        console.error('Failed to load bee population metadata:', error);
+      }
+    };
+    loadBeeMetadata();
+  }, [dispatch]);
 
   // Handle viewport changes
   const handleViewStateChange = useCallback((evt) => {
     const newViewState = evt.viewState;
+    setViewState(newViewState);
+    
+    // Skip loading data if viewport queries are disabled
+    const config = getViewportConfig();
+    if (!config.USE_VIEWPORT_QUERIES) {
+      console.log('Viewport queries disabled - skipping data reload on viewport change');
+      return;
+    }
     
     // Detect if this is primarily a zoom change
     const zoomChange = Math.abs(newViewState.zoom - lastZoom) > 0.5;
@@ -104,6 +211,59 @@ function Map() {
       debouncedLoadViewportData(newViewState, 'pan');
     }
   }, [debouncedLoadViewportData, lastZoom]);
+
+  // Helper function to create bee population layers
+  const createBeePopulationLayers = () => {
+    if (!geoJsonData || !beePopulationData) return [];
+    
+    const beePopulationLayers = [];
+    
+    // Mapping of layer names to data field names
+    const layerMetricMapping = {
+      'TotalEggs': 'totalEggs',
+      'TotalLarvae': 'totalLarvae', 
+      'TotalPupae': 'totalPupae',
+      'TotalIHbees': 'totalIHbees',
+      'TotalForagers': 'totalForagers',
+      'TotalWorkers': 'totalIHbees + totalForagers',
+      'TotalDroneEggs': 'totalDroneEggs',
+      'TotalDroneLarvae': 'totalDroneLarvae',
+      'TotalDronePupae': 'totalDronePupae',
+      'TotalDrones': 'totalDrones'
+    };
+    
+    // Create layers for each visible bee population metric
+    Object.entries(layerMetricMapping).forEach(([layerName, metricName]) => {
+      if (layerVisibility[layerName]?.visible && beePopulationData.data[metricName] !== undefined) {
+        const metricValue = beePopulationData.data[metricName];
+        const maxValue = beePopulationMaxValues[metricName];
+        
+        beePopulationLayers.push(
+          new GeoJsonLayer({
+            id: `bee-${layerName.toLowerCase()}-layer`,
+            data: geoJsonData.features.filter((feature) =>
+              activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
+            ),
+            filled: true,
+            getFillColor: (feature) => {
+              // Apply the same bee population value to all features
+              // In a real scenario, you might want different values per feature
+              return getBeePopulationColor(metricValue, metricName, maxValue);
+            },
+            pickable: true,
+            autoHighlight: true,
+            onClick: info => {
+              if (info.object) {
+                dispatch(selectFeature([info.object.id]));
+              }
+            },
+          })
+        );
+      }
+    });
+    
+    return beePopulationLayers;
+  };
 
   const layers = [
     layerVisibility.LULC.visible && 
@@ -167,6 +327,8 @@ function Map() {
           }
         },
       }),
+    // Add bee population layers
+    ...createBeePopulationLayers(),
   ].filter(Boolean);
 
   // Show loading state

@@ -2,7 +2,7 @@
  * Viewport-based data loading utility for optimized geo-visualization
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8080';
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
 // Configuration options
 const VIEWPORT_CONFIG = {
@@ -388,9 +388,53 @@ export function getViewportConfig() {
 }
 
 /**
+ * Check if full dataset is cached for a given time point
+ */
+export function isFullDatasetCached(timePoint = null) {
+  // If caching is disabled, always return false
+  if (!VIEWPORT_CONFIG.ENABLE_CACHING) {
+    return false;
+  }
+  
+  const hasGeoJson = viewportCache.get('full_geojson') !== null;
+  
+  if (timePoint) {
+    const hasNectar = viewportCache.get(`full_nectar_${timePoint}`) !== null;
+    const hasPollen = viewportCache.get(`full_pollen_${timePoint}`) !== null;
+    return hasGeoJson && hasNectar && hasPollen;
+  } else {
+    const hasNectar = viewportCache.get('full_nectar_max') !== null;
+    const hasPollen = viewportCache.get('full_pollen_max') !== null;
+    return hasGeoJson && hasNectar && hasPollen;
+  }
+}
+
+/**
  * Load all viewport data (GeoJSON + nectar + pollen) in parallel
  */
 export async function loadViewportData(viewState, options = {}) {
+  // If viewport queries are disabled, return cached full dataset immediately
+  if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
+    console.log('Viewport queries disabled - returning cached full dataset');
+    
+    const fullGeoJson = viewportCache.get('full_geojson');
+    const fullNectar = viewportCache.get('full_nectar_max');
+    const fullPollen = viewportCache.get('full_pollen_max');
+    
+    // If we have cached data, return it immediately without making API calls
+    if (fullGeoJson && fullNectar && fullPollen) {
+      console.log('Using cached full datasets - no API calls needed');
+      return {
+        geoJson: fullGeoJson,
+        nectar: fullNectar,
+        pollen: fullPollen
+      };
+    }
+    
+    // If not cached, load once and cache
+    console.log('Loading full datasets once for caching');
+  }
+  
   try {
     const [geoJsonData, nectarData, pollenData] = await Promise.all([
       loadViewportGeoJSON(viewState, options),
@@ -405,6 +449,382 @@ export async function loadViewportData(viewState, options = {}) {
     };
   } catch (error) {
     console.error('Error loading viewport data:', error);
+    throw error;
+  }
+}
+
+/**
+ * Load nectar data for a specific time point
+ */
+export async function loadTimePointNectarData(viewState, timePoint, options = {}) {
+  const { bufferFactor = VIEWPORT_CONFIG.BUFFER_FACTOR, useCache = VIEWPORT_CONFIG.ENABLE_CACHING } = options;
+  
+  // If viewport queries are disabled, load full dataset for time point
+  if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
+    console.log(`Viewport queries disabled - loading full nectar dataset for time point: ${timePoint}`);
+    const cacheKey = `full_nectar_${timePoint}`;
+    
+    if (useCache) {
+      const cached = viewportCache.get(cacheKey);
+      if (cached) {
+        console.log(`Using cached full nectar data for time point: ${timePoint}`);
+        return cached;
+      }
+    }
+    
+    try {
+      const response = await fetch(`http://localhost:8000/api/nectar/time-point/${timePoint}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Convert to lookup object
+      const nectarTimeLookup = {};
+      data.nectar_data.forEach(item => {
+        nectarTimeLookup[item.feature_id] = item.nectar_concentration;
+      });
+      
+      if (useCache) {
+        viewportCache.set(cacheKey, nectarTimeLookup);
+      }
+      
+      console.log(`Loaded full nectar data for time point ${timePoint}: ${Object.keys(nectarTimeLookup).length} features`);
+      return nectarTimeLookup;
+      
+    } catch (error) {
+      console.error(`Error loading full nectar dataset for time point ${timePoint}:`, error);
+      throw error;
+    }
+  }
+  
+  // Viewport-based loading for specific time point
+  const bounds = calculateViewportBounds(viewState, bufferFactor);
+  const [minLng, minLat, maxLng, maxLat] = bounds;
+  
+  const cacheKey = viewportCache.generateKey(bounds, viewState.zoom, `nectar_${timePoint}`);
+  
+  if (useCache) {
+    const cached = viewportCache.get(cacheKey);
+    if (cached) {
+      console.log(`Using cached nectar data for time point: ${timePoint}`);
+      return cached;
+    }
+  }
+  
+  try {
+    const url = new URL(`http://localhost:8000/api/nectar/time-point/${timePoint}/viewport`);
+    url.searchParams.set('min_lng', minLng.toString());
+    url.searchParams.set('min_lat', minLat.toString());
+    url.searchParams.set('max_lng', maxLng.toString());
+    url.searchParams.set('max_lat', maxLat.toString());
+    
+    console.log(`Loading viewport nectar data for time point ${timePoint}: ${url.toString()}`);
+    
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Convert array to lookup object
+    const nectarTimeLookup = {};
+    data.nectar_data.forEach(item => {
+      nectarTimeLookup[item.feature_id] = item.nectar_concentration;
+    });
+    
+    if (useCache) {
+      viewportCache.set(cacheKey, nectarTimeLookup);
+    }
+    
+    console.log(`Loaded ${Object.keys(nectarTimeLookup).length} nectar features for time point ${timePoint}`);
+    return nectarTimeLookup;
+    
+  } catch (error) {
+    console.error(`Error loading viewport nectar data for time point ${timePoint}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Load pollen data for a specific time point
+ */
+export async function loadTimePointPollenData(viewState, timePoint, options = {}) {
+  const { bufferFactor = VIEWPORT_CONFIG.BUFFER_FACTOR, useCache = VIEWPORT_CONFIG.ENABLE_CACHING } = options;
+  
+  // If viewport queries are disabled, load full dataset for time point
+  if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
+    console.log(`Viewport queries disabled - loading full pollen dataset for time point: ${timePoint}`);
+    const cacheKey = `full_pollen_${timePoint}`;
+    
+    if (useCache) {
+      const cached = viewportCache.get(cacheKey);
+      if (cached) {
+        console.log(`Using cached full pollen data for time point: ${timePoint}`);
+        return cached;
+      }
+    }
+    
+    try {
+      const response = await fetch(`http://localhost:8000/api/pollen/time-point/${timePoint}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Convert to lookup object
+      const pollenTimeLookup = {};
+      data.pollen_data.forEach(item => {
+        pollenTimeLookup[item.feature_id] = item.pollen_concentration;
+      });
+      
+      if (useCache) {
+        viewportCache.set(cacheKey, pollenTimeLookup);
+      }
+      
+      console.log(`Loaded full pollen data for time point ${timePoint}: ${Object.keys(pollenTimeLookup).length} features`);
+      return pollenTimeLookup;
+      
+    } catch (error) {
+      console.error(`Error loading full pollen dataset for time point ${timePoint}:`, error);
+      throw error;
+    }
+  }
+  
+  // Viewport-based loading for specific time point
+  const bounds = calculateViewportBounds(viewState, bufferFactor);
+  const [minLng, minLat, maxLng, maxLat] = bounds;
+  
+  const cacheKey = viewportCache.generateKey(bounds, viewState.zoom, `pollen_${timePoint}`);
+  
+  if (useCache) {
+    const cached = viewportCache.get(cacheKey);
+    if (cached) {
+      console.log(`Using cached pollen data for time point: ${timePoint}`);
+      return cached;
+    }
+  }
+  
+  try {
+    const url = new URL(`http://localhost:8000/api/pollen/time-point/${timePoint}/viewport`);
+    url.searchParams.set('min_lng', minLng.toString());
+    url.searchParams.set('min_lat', minLat.toString());
+    url.searchParams.set('max_lng', maxLng.toString());
+    url.searchParams.set('max_lat', maxLat.toString());
+    
+    console.log(`Loading viewport pollen data for time point ${timePoint}: ${url.toString()}`);
+    
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Convert array to lookup object
+    const pollenTimeLookup = {};
+    data.pollen_data.forEach(item => {
+      pollenTimeLookup[item.feature_id] = item.pollen_concentration;
+    });
+    
+    if (useCache) {
+      viewportCache.set(cacheKey, pollenTimeLookup);
+    }
+    
+    console.log(`Loaded ${Object.keys(pollenTimeLookup).length} pollen features for time point ${timePoint}`);
+    return pollenTimeLookup;
+    
+  } catch (error) {
+    console.error(`Error loading viewport pollen data for time point ${timePoint}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Load only time-specific nectar and pollen data (without GeoJSON)
+ */
+export async function loadTimePointData(viewState, timePoint, options = {}) {
+  // If viewport queries are disabled, check for cached time-specific data
+  if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES && VIEWPORT_CONFIG.ENABLE_CACHING) {
+    console.log(`Viewport queries disabled - checking cached time-specific data for time point ${timePoint}`);
+    
+    const fullNectar = viewportCache.get(`full_nectar_${timePoint}`);
+    const fullPollen = viewportCache.get(`full_pollen_${timePoint}`);
+    
+    // If we have cached data, return it immediately without making API calls
+    if (fullNectar && fullPollen) {
+      console.log(`Using cached time-specific data for time point ${timePoint} - no API calls needed`);
+      return {
+        nectar: fullNectar,
+        pollen: fullPollen,
+        timePoint: timePoint
+      };
+    }
+    
+    // If not cached, load once and cache
+    console.log(`Loading time-specific data once for time point ${timePoint} for caching`);
+  }
+  
+  try {
+    const [nectarData, pollenData] = await Promise.all([
+      loadTimePointNectarData(viewState, timePoint, options),
+      loadTimePointPollenData(viewState, timePoint, options)
+    ]);
+    
+    return {
+      nectar: nectarData,
+      pollen: pollenData,
+      timePoint: timePoint
+    };
+  } catch (error) {
+    console.error(`Error loading time-specific data for time point ${timePoint}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Load all viewport data for a specific time point (GeoJSON + time-specific nectar + pollen)
+ */
+export async function loadViewportDataForTimePoint(viewState, timePoint, options = {}) {
+  // If viewport queries are disabled, return cached full dataset immediately
+  if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
+    console.log(`Viewport queries disabled - returning cached full dataset for time point ${timePoint}`);
+    
+    const fullGeoJson = viewportCache.get('full_geojson');
+    const fullNectar = viewportCache.get(`full_nectar_${timePoint}`);
+    const fullPollen = viewportCache.get(`full_pollen_${timePoint}`);
+    
+    // If we have cached data, return it immediately without making API calls
+    if (fullGeoJson && fullNectar && fullPollen) {
+      console.log(`Using cached full datasets for time point ${timePoint} - no API calls needed`);
+      return {
+        geoJson: fullGeoJson,
+        nectar: fullNectar,
+        pollen: fullPollen,
+        timePoint: timePoint
+      };
+    }
+    
+    // If not cached, load once and cache
+    console.log(`Loading full datasets once for time point ${timePoint} for caching`);
+  }
+  
+  try {
+    const [geoJsonData, nectarData, pollenData] = await Promise.all([
+      loadViewportGeoJSON(viewState, options),
+      loadTimePointNectarData(viewState, timePoint, options),
+      loadTimePointPollenData(viewState, timePoint, options)
+    ]);
+    
+    return {
+      geoJson: geoJsonData,
+      nectar: nectarData,
+      pollen: pollenData,
+      timePoint: timePoint
+    };
+  } catch (error) {
+    console.error(`Error loading viewport data for time point ${timePoint}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Load bee population data for a specific time point
+ */
+export async function loadBeePopulationData(timePoint) {
+  try {
+    console.log(`Loading bee population data for time point: ${timePoint}`);
+    
+    // Check cache first
+    const cacheKey = `bee_population_${timePoint}`;
+    if (VIEWPORT_CONFIG.ENABLE_CACHING) {
+      const cached = viewportCache.get(cacheKey);
+      if (cached) {
+        console.log(`Using cached bee population data for time point ${timePoint}`);
+        return cached;
+      }
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/api/bee-population/time-point/${timePoint}`);
+    if (!response.ok) {
+      throw new Error(`Failed to load bee population data: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Cache the result
+    if (VIEWPORT_CONFIG.ENABLE_CACHING) {
+      viewportCache.set(cacheKey, data);
+    }
+    
+    console.log(`Loaded bee population data for time point ${timePoint}`);
+    return data;
+    
+  } catch (error) {
+    console.error(`Error loading bee population data for time point ${timePoint}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Load complete bee population time series
+ */
+export async function loadBeePopulationTimeSeries() {
+  try {
+    console.log('Loading complete bee population time series...');
+    
+    // Check cache first
+    const cacheKey = 'bee_population_timeseries';
+    if (VIEWPORT_CONFIG.ENABLE_CACHING) {
+      const cached = viewportCache.get(cacheKey);
+      if (cached) {
+        console.log('Using cached bee population time series');
+        return cached;
+      }
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/api/bee-population/timeseries`);
+    if (!response.ok) {
+      throw new Error(`Failed to load bee population time series: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Cache the result
+    if (VIEWPORT_CONFIG.ENABLE_CACHING) {
+      viewportCache.set(cacheKey, data);
+    }
+    
+    console.log('Loaded complete bee population time series');
+    return data;
+    
+  } catch (error) {
+    console.error('Error loading bee population time series:', error);
+    throw error;
+  }
+}
+
+/**
+ * Load available bee population metrics
+ */
+export async function loadBeePopulationMetrics() {
+  try {
+    console.log('Loading bee population metrics...');
+    
+    const response = await fetch(`${API_BASE_URL}/api/bee-population/metrics`);
+    if (!response.ok) {
+      throw new Error(`Failed to load bee population metrics: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('Loaded bee population metrics:', data.metrics);
+    return data.metrics;
+    
+  } catch (error) {
+    console.error('Error loading bee population metrics:', error);
     throw error;
   }
 }
