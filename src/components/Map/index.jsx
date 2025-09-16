@@ -4,7 +4,7 @@ import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMet
 // import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, Popup, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
-import {GeoJsonLayer} from 'deck.gl';
+import {GeoJsonLayer, ScatterplotLayer} from 'deck.gl';
 import { getLandUseColor, getNectarColor, getPollenColor, getBeePopulationColor, getBeePopulationMaxValues } from '../../utils/colorScales';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -12,6 +12,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // import MapControls from './MapControls';
 import { selectFeature } from '../../store/reducers/selectionReducer';
 import { loadViewportData, loadViewportDataForTimePoint, loadTimePointData, loadBeePopulationData, loadBeePopulationTimeSeries, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
+import { buildApiUrl } from '../../config/api';
 
 // Disable viewport queries (for debugging)
 // Only enable this if you know what you are doing, as viewport queries
@@ -51,6 +52,7 @@ function Map() {
   const [beePopulationData, setBeePopulationDataState] = useState(null);
   const [beePopulationTimeSeries, setBeePopulationTimeSeries] = useState(null);
   const [beePopulationMaxValues, setBeePopulationMaxValues] = useState({});
+  const [beehiveLocation, setBeehiveLocation] = useState(null);
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
   const layerVisibility = useSelector(state => state.layers);
@@ -124,6 +126,26 @@ function Map() {
   useEffect(() => {
     console.log('Loading initial GeoJSON and max values data...');
     debouncedLoadViewportData(INITIAL_VIEW_STATE);
+  }, []); // Empty dependency array - run only once
+
+  // Load beehive location data once
+  useEffect(() => {
+    const loadBeehiveLocation = async () => {
+      try {
+        const response = await fetch(buildApiUrl('/api/beehive-location'));
+        if (response.ok) {
+          const location = await response.json();
+          setBeehiveLocation(location);
+          console.log('Beehive location loaded:', location);
+        } else {
+          console.warn('Beehive location not found');
+        }
+      } catch (error) {
+        console.error('Error loading beehive location:', error);
+      }
+    };
+    
+    loadBeehiveLocation();
   }, []); // Empty dependency array - run only once
 
   // Load time-specific data when selected time point changes
@@ -326,6 +348,26 @@ function Map() {
             dispatch(selectFeature([info.object.id]));
           }
         },
+      }),
+    // Beehive location layer
+    layerVisibility.Beehive?.visible && 
+    beehiveLocation &&
+      new ScatterplotLayer({
+        id: 'beehive-layer',
+        data: [{
+          coordinates: [beehiveLocation.x, beehiveLocation.y],
+          radius: 200 // 200 meter radius circle
+        }],
+        getPosition: d => d.coordinates,
+        getRadius: d => d.radius,
+        getFillColor: [255, 165, 0, 200], // Orange color with transparency
+        getLineColor: [255, 140, 0, 255], // Darker orange outline
+        getLineWidth: 3,
+        stroked: true,
+        filled: true,
+        radiusUnits: 'meters',
+        pickable: true,
+        autoHighlight: true,
       }),
     // Add bee population layers
     ...createBeePopulationLayers(),
