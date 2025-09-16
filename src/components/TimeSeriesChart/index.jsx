@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedTimePoint, setAvailableTimePoints } from '../../store/timeSlice';
 import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
+import { buildApiUrl } from '../../config/api';
 import SingleTimeSeriesChart from '../SingleTimeSeriesChart';
 
 const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
@@ -20,7 +21,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     setError(null);
     
     try {
-      let url = 'http://localhost:8000/api/timeseries/averages?include_nectar=true&include_pollen=true';
+      let url = buildApiUrl('/api/timeseries/averages?include_nectar=true&include_pollen=true');
       
       // If features are selected, add them to the query
       if (selectedFeatureIds.length > 0) {

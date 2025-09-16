@@ -2,7 +2,7 @@
  * Viewport-based data loading utility for optimized geo-visualization
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+import { API_BASE_URL, buildApiUrl } from '../config/api.js';
 
 // Configuration options
 const VIEWPORT_CONFIG = {
@@ -473,7 +473,7 @@ export async function loadTimePointNectarData(viewState, timePoint, options = {}
     }
     
     try {
-      const response = await fetch(`http://localhost:8000/api/nectar/time-point/${timePoint}`);
+      const response = await fetch(buildApiUrl(`/api/nectar/time-point/${timePoint}`));
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -514,7 +514,7 @@ export async function loadTimePointNectarData(viewState, timePoint, options = {}
   }
   
   try {
-    const url = new URL(`http://localhost:8000/api/nectar/time-point/${timePoint}/viewport`);
+    const url = new URL(buildApiUrl(`/api/nectar/time-point/${timePoint}/viewport`));
     url.searchParams.set('min_lng', minLng.toString());
     url.searchParams.set('min_lat', minLat.toString());
     url.searchParams.set('max_lng', maxLng.toString());
@@ -568,7 +568,7 @@ export async function loadTimePointPollenData(viewState, timePoint, options = {}
     }
     
     try {
-      const response = await fetch(`http://localhost:8000/api/pollen/time-point/${timePoint}`);
+      const response = await fetch(buildApiUrl(`/api/pollen/time-point/${timePoint}`));
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -609,7 +609,7 @@ export async function loadTimePointPollenData(viewState, timePoint, options = {}
   }
   
   try {
-    const url = new URL(`http://localhost:8000/api/pollen/time-point/${timePoint}/viewport`);
+    const url = new URL(buildApiUrl(`/api/pollen/time-point/${timePoint}/viewport`));
     url.searchParams.set('min_lng', minLng.toString());
     url.searchParams.set('min_lat', minLat.toString());
     url.searchParams.set('max_lng', maxLng.toString());
