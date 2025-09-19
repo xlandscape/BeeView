@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics } from '../../store/slices/mapSlice';
 // import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, Popup, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
 import {GeoJsonLayer, ScatterplotLayer} from 'deck.gl';
-import { getLandUseColor, getNectarColor, getPollenColor, getBeePopulationColor, getBeePopulationMaxValues } from '../../utils/colorScales';
+import { getLandUseColor, getNectarColor, getPollenColor, getBeePopulationMaxValues } from '../../utils/colorScales';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
 // import LandUseLayer from './LandUseLayer';
@@ -234,84 +234,60 @@ function Map() {
     }
   }, [debouncedLoadViewportData, lastZoom]);
 
-  // Helper function to create bee population layers
-  const createBeePopulationLayers = () => {
-    if (!geoJsonData || !beePopulationData) return [];
-    
-    const beePopulationLayers = [];
-    
-    // Mapping of layer names to data field names
-    const layerMetricMapping = {
-      'TotalEggs': 'totalEggs',
-      'TotalLarvae': 'totalLarvae', 
-      'TotalPupae': 'totalPupae',
-      'TotalIHbees': 'totalIHbees',
-      'TotalForagers': 'totalForagers',
-      'TotalWorkers': 'totalIHbees + totalForagers',
-      'TotalDroneEggs': 'totalDroneEggs',
-      'TotalDroneLarvae': 'totalDroneLarvae',
-      'TotalDronePupae': 'totalDronePupae',
-      'TotalDrones': 'totalDrones'
+  // Note: Bee population data has no spatial resolution - it represents colony-wide metrics
+  // that are the same for all polygons. Therefore, bee population data is only displayed
+  // in time series charts, not as map layers.
+
+  // Optimize data filtering with useMemo to prevent re-filtering on every render
+  const filteredGeoJsonData = useMemo(() => {
+    if (!geoJsonData) return null;
+    return {
+      ...geoJsonData,
+      features: geoJsonData.features.filter((feature) =>
+        activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
+      )
     };
-    
-    // Create layers for each visible bee population metric
-    Object.entries(layerMetricMapping).forEach(([layerName, metricName]) => {
-      if (layerVisibility[layerName]?.visible && beePopulationData.data[metricName] !== undefined) {
-        const metricValue = beePopulationData.data[metricName];
-        const maxValue = beePopulationMaxValues[metricName];
-        
-        beePopulationLayers.push(
-          new GeoJsonLayer({
-            id: `bee-${layerName.toLowerCase()}-layer`,
-            data: geoJsonData.features.filter((feature) =>
-              activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
-            ),
-            filled: true,
-            getFillColor: (feature) => {
-              // Apply the same bee population value to all features
-              // In a real scenario, you might want different values per feature
-              return getBeePopulationColor(metricValue, metricName, maxValue);
-            },
-            pickable: true,
-            autoHighlight: true,
-            onClick: info => {
-              if (info.object) {
-                dispatch(selectFeature([info.object.id]));
-              }
-            },
-          })
-        );
-      }
-    });
-    
-    return beePopulationLayers;
-  };
+  }, [geoJsonData, activeFilters]);
+
+  // Memoize onClick handlers to prevent layer recreation
+  const handleFeatureClick = useCallback((info) => {
+    if (info.object) {
+      dispatch(selectFeature([info.object.id]));
+    }
+  }, [dispatch]);
+
+  const handleLandUseClick = useCallback((info) => {
+    setSelected(info.object);
+  }, []);
 
   const layers = [
     layerVisibility.LULC.visible && 
-    geoJsonData &&
+    filteredGeoJsonData &&
       new GeoJsonLayer({
         id: 'geojson-layer',
-        data: geoJsonData.features.filter((feature) =>
-          activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
-        ),
+        data: filteredGeoJsonData.features,
         filled: true,
-        getFillColor: (feature, {index}) => {
-          return getLandUseColor(feature.properties.L1_label);
-      },
+        getFillColor: (feature) => getLandUseColor(feature.properties.L1_label),
         pickable: true,
         autoHighlight: true,
-        onClick: (info) => setSelected(info.object),
+        onClick: handleLandUseClick,
+        // Performance optimizations
+        updateTriggers: {
+          getFillColor: [layerVisibility.LULC.visible]
+        },
+        // Reduce polygon complexity for better performance
+        wireframe: false,
+        lineWidthMinPixels: 0,
+        getLineWidth: 0,
       }),
     layerVisibility.Nectar.visible && 
     nectarMax &&
+    filteredGeoJsonData &&
       new GeoJsonLayer({ 
         id: 'nectar-layer',
-        data: geoJsonData.features.filter((feature) =>
-          activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
-        ),
+        data: filteredGeoJsonData.features,
         filled: true,
-        getFillColor: (feature, {index}) => {
+        getFillColor: (feature) => {
           if (!nectarMax || !nectarMax[feature.id]) {
             return [200, 200, 200, 100];
           }
@@ -320,21 +296,23 @@ function Map() {
         },
         pickable: true,
         autoHighlight: true,
-        onClick: info => {
-          if (info.object) {
-            dispatch(selectFeature([info.object.id]));
-          }
+        onClick: handleFeatureClick,
+        // Performance optimizations
+        updateTriggers: {
+          getFillColor: [nectarMax, layerVisibility.Nectar.visible]
         },
+        wireframe: false,
+        lineWidthMinPixels: 0,
+        getLineWidth: 0,
       }),
     layerVisibility.Pollen?.visible && 
     pollenMax &&
+    filteredGeoJsonData &&
       new GeoJsonLayer({ 
         id: 'pollen-layer',
-        data: geoJsonData.features.filter((feature) =>
-          activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
-        ),
+        data: filteredGeoJsonData.features,
         filled: true,
-        getFillColor: (feature, {index}) => {
+        getFillColor: (feature) => {
           if (!pollenMax || !pollenMax[feature.id]) {
             return [200, 200, 200, 100];
           }
@@ -343,11 +321,14 @@ function Map() {
         },
         pickable: true,
         autoHighlight: true,
-        onClick: info => {
-          if (info.object) {
-            dispatch(selectFeature([info.object.id]));
-          }
+        onClick: handleFeatureClick,
+        // Performance optimizations
+        updateTriggers: {
+          getFillColor: [pollenMax, layerVisibility.Pollen.visible]
         },
+        wireframe: false,
+        lineWidthMinPixels: 0,
+        getLineWidth: 0,
       }),
     // Beehive location layer
     layerVisibility.Beehive?.visible && 
@@ -368,9 +349,11 @@ function Map() {
         radiusUnits: 'meters',
         pickable: true,
         autoHighlight: true,
-      }),
-    // Add bee population layers
-    ...createBeePopulationLayers(),
+        updateTriggers: {
+          getFillColor: [beehiveLocation],
+          getPosition: [beehiveLocation]
+        }
+      })
   ].filter(Boolean);
 
   // Show loading state

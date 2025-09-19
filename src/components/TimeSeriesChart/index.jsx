@@ -63,14 +63,20 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
 
   // Transform bee population data to chart format
   const getBeeChartData = (metricKey) => {
-    if (!beePopulationData || !beePopulationData[metricKey] || !beePopulationData.days) {
+    if (!beePopulationData || !beePopulationData.timeseries || !Array.isArray(beePopulationData.timeseries)) {
       return [];
     }
     
-    return beePopulationData.days.map((day, index) => ({
-      day: day,
-      [metricKey]: beePopulationData[metricKey][index]
-    }));
+    // The API returns: {"timeseries": [{"day": 1, "totalEggs": 123, ...}, ...]}
+    // Transform to chart format: [{day: 1, totalEggs: 123}, ...]
+    return beePopulationData.timeseries.map(dayData => {
+      let value = dayData[metricKey] || 0;
+      
+      return {
+        day: dayData.day,
+        [metricKey]: value
+      };
+    });
   };
 
   useEffect(() => {
