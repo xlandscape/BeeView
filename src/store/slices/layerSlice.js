@@ -5,6 +5,7 @@ const initialState = {
   Pollen: { visible: false },
   Nectar: { visible: false },
   Beehive: { visible: false },
+  Vegetation: { visible: false },
   // Bee population layers
   TotalEggs: { visible: false },
   TotalLarvae: { visible: false },

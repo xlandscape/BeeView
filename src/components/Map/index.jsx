@@ -2,15 +2,15 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSelector, useDispatch } from 'react-redux';
 import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics } from '../../store/slices/mapSlice';
 // import DeckGL from '@deck.gl/react';
-import {Map as MapLibre, NavigationControl, Popup, useControl} from 'react-map-gl/maplibre';
+import {Map as MapLibre, NavigationControl, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
 import {GeoJsonLayer, ScatterplotLayer} from 'deck.gl';
-import { getLandUseColor, getNectarColor, getPollenColor, getBeePopulationMaxValues } from '../../utils/colorScales';
+import { getLandUseColor, getLevel1LandUseColor, getLevel2LandUseColor, getLevel3LandUseColor, getNectarColor, getPollenColor, getVegetationColor, getBeePopulationMaxValues } from '../../utils/colorScales';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
 // import LandUseLayer from './LandUseLayer';
 // import MapControls from './MapControls';
-import { selectFeature } from '../../store/reducers/selectionReducer';
+import { selectFeature, clearSelection } from '../../store/reducers/selectionReducer';
 import { loadViewportData, loadViewportDataForTimePoint, loadTimePointData, loadBeePopulationData, loadBeePopulationTimeSeries, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
 import { buildApiUrl } from '../../config/api';
 
@@ -43,7 +43,6 @@ function Map() {
   const [geoJsonData, setGeoJsonData] = useState(null);
   const [nectarMax, setNectarData] = useState(null);
   const [pollenMax, setPollenData] = useState(null);
-  const [selected, setSelected] = useState(null);
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -53,10 +52,12 @@ function Map() {
   const [beePopulationTimeSeries, setBeePopulationTimeSeries] = useState(null);
   const [beePopulationMaxValues, setBeePopulationMaxValues] = useState({});
   const [beehiveLocation, setBeehiveLocation] = useState(null);
+  const [vegetationMapping, setVegetationMapping] = useState(null);
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
   const layerVisibility = useSelector(state => state.layers);
   const { selectedTimePoint } = useSelector(state => state.time);
+  const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
 
   // Debounced viewport data loading with longer delay for zoom changes
   const debouncedLoadViewportData = useCallback(
@@ -146,6 +147,26 @@ function Map() {
     };
     
     loadBeehiveLocation();
+  }, []); // Empty dependency array - run only once
+
+  // Load vegetation mapping data once  
+  useEffect(() => {
+    const loadVegetationMapping = async () => {
+      try {
+        const response = await fetch(buildApiUrl('/api/vegetation-codes-map'));
+        if (response.ok) {
+          const data = await response.json();
+          setVegetationMapping(data.mapping);
+          console.log('Vegetation mapping loaded:', data.mapping);
+        } else {
+          console.warn('Vegetation mapping not found');
+        }
+      } catch (error) {
+        console.error('Error loading vegetation mapping:', error);
+      }
+    };
+    
+    loadVegetationMapping();
   }, []); // Empty dependency array - run only once
 
   // Load time-specific data when selected time point changes
@@ -249,16 +270,47 @@ function Map() {
     };
   }, [geoJsonData, activeFilters]);
 
-  // Memoize onClick handlers to prevent layer recreation
+  // Simplified click handler - only handles selection
   const handleFeatureClick = useCallback((info) => {
     if (info.object) {
       dispatch(selectFeature([info.object.id]));
     }
   }, [dispatch]);
 
-  const handleLandUseClick = useCallback((info) => {
-    setSelected(info.object);
-  }, []);
+  // Helper function to modify colors for selected features
+  const getHighlightedColor = useCallback((feature, baseColor) => {
+    const isSelected = selectedFeatureIds.includes(feature.id);
+    if (isSelected) {
+      // For selected features, make them brighter and more saturated
+      return [
+        Math.min(255, Math.floor(baseColor[0] * 1.3)),
+        Math.min(255, Math.floor(baseColor[1] * 1.3)), 
+        Math.min(255, Math.floor(baseColor[2] * 1.3)),
+        Math.max(200, baseColor[3] || 180) // Ensure good opacity for selected features
+      ];
+    }
+    return baseColor;
+  }, [selectedFeatureIds]);
+
+  // Get line color for selection highlighting
+  const getSelectionLineColor = useCallback((feature) => {
+    const isSelected = selectedFeatureIds.includes(feature.id);
+    return isSelected ? [255, 255, 0, 255] : [50, 50, 50, 80]; // Bright yellow for selected, subtle dark for others
+  }, [selectedFeatureIds]);
+
+  // Get line width for selection highlighting  
+  const getSelectionLineWidth = useCallback((feature) => {
+    const isSelected = selectedFeatureIds.includes(feature.id);
+    return isSelected ? 4 : 1; // Thicker lines for selected features
+  }, [selectedFeatureIds]);
+
+  // Handle map background clicks to clear selection
+  const handleMapClick = useCallback((info, event) => {
+    // If no object was clicked (clicking on background), clear the selection
+    if (!info.object) {
+      dispatch(clearSelection());
+    }
+  }, [dispatch]);
 
   const layers = [
     layerVisibility.LULC.visible && 
@@ -267,18 +319,24 @@ function Map() {
         id: 'geojson-layer',
         data: filteredGeoJsonData.features,
         filled: true,
-        getFillColor: (feature) => getLandUseColor(feature.properties.L1_label),
+        getFillColor: (feature) => {
+          const baseColor = getLandUseColor(feature.properties.L3_label, 3);
+          return getHighlightedColor(feature, baseColor);
+        },
+        stroked: true,
+        getLineColor: getSelectionLineColor,
+        getLineWidth: getSelectionLineWidth,
+        lineWidthMinPixels: 1,
         pickable: true,
         autoHighlight: true,
-        onClick: handleLandUseClick,
+        onClick: handleFeatureClick,
         // Performance optimizations
         updateTriggers: {
-          getFillColor: [layerVisibility.LULC.visible]
+          getFillColor: [layerVisibility.LULC.visible, selectedFeatureIds],
+          getLineColor: [selectedFeatureIds],
+          getLineWidth: [selectedFeatureIds]
         },
-        // Reduce polygon complexity for better performance
         wireframe: false,
-        lineWidthMinPixels: 0,
-        getLineWidth: 0,
       }),
     layerVisibility.Nectar.visible && 
     nectarMax &&
@@ -289,21 +347,27 @@ function Map() {
         filled: true,
         getFillColor: (feature) => {
           if (!nectarMax || !nectarMax[feature.id]) {
-            return [200, 200, 200, 100];
+            const baseColor = [200, 200, 200, 100];
+            return getHighlightedColor(feature, baseColor);
           }
           const nectar = nectarMax[feature.id];
-          return getNectarColor(nectar);
+          const baseColor = getNectarColor(nectar);
+          return getHighlightedColor(feature, baseColor);
         },
+        stroked: true,
+        getLineColor: getSelectionLineColor,
+        getLineWidth: getSelectionLineWidth,
+        lineWidthMinPixels: 1,
         pickable: true,
         autoHighlight: true,
         onClick: handleFeatureClick,
         // Performance optimizations
         updateTriggers: {
-          getFillColor: [nectarMax, layerVisibility.Nectar.visible]
+          getFillColor: [nectarMax, layerVisibility.Nectar.visible, selectedFeatureIds],
+          getLineColor: [selectedFeatureIds],
+          getLineWidth: [selectedFeatureIds]
         },
         wireframe: false,
-        lineWidthMinPixels: 0,
-        getLineWidth: 0,
       }),
     layerVisibility.Pollen?.visible && 
     pollenMax &&
@@ -314,21 +378,71 @@ function Map() {
         filled: true,
         getFillColor: (feature) => {
           if (!pollenMax || !pollenMax[feature.id]) {
-            return [200, 200, 200, 100];
+            const baseColor = [200, 200, 200, 100];
+            return getHighlightedColor(feature, baseColor);
           }
           const pollen = pollenMax[feature.id];
-          return typeof getPollenColor === 'function' ? getPollenColor(pollen) : [255, 200, 0, 180];
+          const baseColor = typeof getPollenColor === 'function' ? getPollenColor(pollen) : [255, 200, 0, 180];
+          return getHighlightedColor(feature, baseColor);
         },
+        stroked: true,
+        getLineColor: getSelectionLineColor,
+        getLineWidth: getSelectionLineWidth,
+        lineWidthMinPixels: 1,
         pickable: true,
         autoHighlight: true,
         onClick: handleFeatureClick,
         // Performance optimizations
         updateTriggers: {
-          getFillColor: [pollenMax, layerVisibility.Pollen.visible]
+          getFillColor: [pollenMax, layerVisibility.Pollen.visible, selectedFeatureIds],
+          getLineColor: [selectedFeatureIds],
+          getLineWidth: [selectedFeatureIds]
         },
         wireframe: false,
-        lineWidthMinPixels: 0,
-        getLineWidth: 0,
+      }),
+    // Vegetation layer
+    layerVisibility.Vegetation?.visible && 
+    vegetationMapping &&
+    filteredGeoJsonData &&
+      new GeoJsonLayer({ 
+        id: 'vegetation-layer',
+        data: filteredGeoJsonData.features,
+        filled: true,
+        getFillColor: (feature) => {
+          const l1Code = feature.properties.L1_code;
+          const l2Code = feature.properties.L2_code;
+          const l3Code = feature.properties.L3_code;
+          
+          if (!l1Code || !l2Code || !l3Code) {
+            const baseColor = [200, 200, 200, 100]; // Gray for missing codes
+            return getHighlightedColor(feature, baseColor);
+          }
+          
+          const codeKey = `${l1Code}-${l2Code}-${l3Code}`;
+          const vegetationType = vegetationMapping[codeKey];
+          
+          if (!vegetationType) {
+            const baseColor = [200, 200, 200, 100]; // Gray for unmapped
+            return getHighlightedColor(feature, baseColor);
+          }
+          
+          const baseColor = getVegetationColor(vegetationType);
+          return getHighlightedColor(feature, baseColor);
+        },
+        stroked: true,
+        getLineColor: getSelectionLineColor,
+        getLineWidth: getSelectionLineWidth,
+        lineWidthMinPixels: 1,
+        pickable: true,
+        autoHighlight: true,
+        onClick: handleFeatureClick,
+        // Performance optimizations
+        updateTriggers: {
+          getFillColor: [vegetationMapping, layerVisibility.Vegetation.visible, selectedFeatureIds],
+          getLineColor: [selectedFeatureIds],
+          getLineWidth: [selectedFeatureIds]
+        },
+        wireframe: false,
       }),
     // Beehive location layer
     layerVisibility.Beehive?.visible && 
@@ -379,18 +493,7 @@ function Map() {
         onMove={handleViewStateChange}
         mapStyle={MAP_STYLE}
       >
-        {selected && (
-          <Popup
-            key={selected.properties.L1_label}
-            anchor="bottom"
-            style={{zIndex: 10}} /* position above deck.gl canvas */
-            longitude={selected.geometry.coordinates[0][0][0][0]}
-            latitude={selected.geometry.coordinates[0][0][0][1]}
-          >
-            <div>{selected.properties.L1_label}</div>
-          </Popup>
-        )}
-        <DeckGLOverlay layers={layers} /* interleaved*/ />
+        <DeckGLOverlay layers={layers} onClick={handleMapClick} /* interleaved*/ />
         <NavigationControl position="top-left" />
       </MapLibre>
       

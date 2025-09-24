@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedTimePoint, setAvailableTimePoints } from '../../store/timeSlice';
+import { clearSelection } from '../../store/reducers/selectionReducer';
 import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
 import { buildApiUrl } from '../../config/api';
 import SingleTimeSeriesChart from '../SingleTimeSeriesChart';
@@ -137,15 +138,32 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     if (selectedFeatureIds.length === 0) {
       return "Showing overall average across all features";
     }
-    return `Features: ${selectedFeatureIds.length}`;
+    return `Features: ${selectedFeatureIds.length} (click map background to deselect)`;
   };
 
   return (
     <div className="timeseries-container">
       <h3 className="text-lg font-semibold mb-4">{getChartTitle()}</h3>
       {selectedTimePoint && (
-        <div style={{ marginBottom: '15px', fontSize: '14px', color: '#666' }}>
-          Selected Day: {selectedTimePoint} | {getStatusMessage()}
+        <div style={{ marginBottom: '15px', fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>Selected Day: {selectedTimePoint} | {getStatusMessage()}</span>
+          {selectedFeatureIds.length > 0 && (
+            <button 
+              onClick={() => dispatch(clearSelection())}
+              style={{
+                background: '#f0f0f0',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                padding: '4px 8px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                marginLeft: '10px'
+              }}
+              title="Clear feature selection"
+            >
+              Clear Selection
+            </button>
+          )}
         </div>
       )}
       
