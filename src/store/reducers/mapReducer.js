@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   landUseData: null,
+  vegetationCodesMap: null,
   visibleLayers: {
     landUse: true,
     baseMap: true
@@ -17,6 +18,9 @@ const mapSlice = createSlice({
     setLandUseData: (state, action) => {
       state.landUseData = action.payload;
     },
+    setVegetationCodesMap: (state, action) => {
+      state.vegetationCodesMap = action.payload;
+    },
     toggleLayer: (state, action) => {
       state.visibleLayers[action.payload] = !state.visibleLayers[action.payload];
     },
@@ -29,6 +33,6 @@ const mapSlice = createSlice({
   }
 });
 
-export const { setLandUseData, toggleLayer, setLoading, setError } = mapSlice.actions;
+export const { setLandUseData, setVegetationCodesMap, toggleLayer, setLoading, setError } = mapSlice.actions;
 
 export default mapSlice.reducer;

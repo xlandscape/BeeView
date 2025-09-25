@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics } from '../../store/slices/mapSlice';
+import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics, setVegetationCodesMap } from '../../store/slices/mapSlice';
 // import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
@@ -157,6 +157,7 @@ function Map() {
         if (response.ok) {
           const data = await response.json();
           setVegetationMapping(data.mapping);
+          dispatch(setVegetationCodesMap(data.mapping));
           console.log('Vegetation mapping loaded:', data.mapping);
         } else {
           console.warn('Vegetation mapping not found');
@@ -273,36 +274,38 @@ function Map() {
   // Simplified click handler - only handles selection
   const handleFeatureClick = useCallback((info) => {
     if (info.object) {
-      dispatch(selectFeature([info.object.id]));
+      dispatch(selectFeature(info.object.id));
     }
   }, [dispatch]);
 
-  // Helper function to modify colors for selected features
-  const getHighlightedColor = useCallback((feature, baseColor) => {
-    const isSelected = selectedFeatureIds.includes(feature.id);
-    if (isSelected) {
-      // For selected features, make them brighter and more saturated
-      return [
-        Math.min(255, Math.floor(baseColor[0] * 1.3)),
-        Math.min(255, Math.floor(baseColor[1] * 1.3)), 
-        Math.min(255, Math.floor(baseColor[2] * 1.3)),
-        Math.max(200, baseColor[3] || 180) // Ensure good opacity for selected features
-      ];
+  // Helper function to get fill color with opacity-based highlighting
+  const getHighlightedFillColor = useCallback((feature, baseColor) => {
+    const hasSelection = selectedFeatureIds.length > 0;
+    if (!hasSelection) {
+      return [baseColor[0], baseColor[1], baseColor[2], 200]; // Default opacity when nothing is selected
     }
-    return baseColor;
+    
+    const isSelected = selectedFeatureIds.includes(feature.id);
+    const opacity = isSelected ? 255 : 80; // Selected: full opacity, others: very dimmed
+    return [baseColor[0], baseColor[1], baseColor[2], opacity];
   }, [selectedFeatureIds]);
 
-  // Get line color for selection highlighting
+  // Get line color for selection highlighting (simplified)
   const getSelectionLineColor = useCallback((feature) => {
+    const hasSelection = selectedFeatureIds.length > 0;
+    if (!hasSelection) {
+      return [50, 50, 50, 100]; // Default line when nothing is selected
+    }
+    
     const isSelected = selectedFeatureIds.includes(feature.id);
-    return isSelected ? [255, 255, 0, 255] : [50, 50, 50, 80]; // Bright yellow for selected, subtle dark for others
+    const opacity = isSelected ? 200 : 50; // Selected: visible lines, others: very faint
+    return [50, 50, 50, opacity];
   }, [selectedFeatureIds]);
 
-  // Get line width for selection highlighting  
+  // Get line width - no special highlighting
   const getSelectionLineWidth = useCallback((feature) => {
-    const isSelected = selectedFeatureIds.includes(feature.id);
-    return isSelected ? 4 : 1; // Thicker lines for selected features
-  }, [selectedFeatureIds]);
+    return 1; // Consistent line width for all features
+  }, []);
 
   // Handle map background clicks to clear selection
   const handleMapClick = useCallback((info, event) => {
@@ -321,7 +324,7 @@ function Map() {
         filled: true,
         getFillColor: (feature) => {
           const baseColor = getLandUseColor(feature.properties.L3_label, 3);
-          return getHighlightedColor(feature, baseColor);
+          return getHighlightedFillColor(feature, baseColor);
         },
         stroked: true,
         getLineColor: getSelectionLineColor,
@@ -347,12 +350,12 @@ function Map() {
         filled: true,
         getFillColor: (feature) => {
           if (!nectarMax || !nectarMax[feature.id]) {
-            const baseColor = [200, 200, 200, 100];
-            return getHighlightedColor(feature, baseColor);
+            const baseColor = [200, 200, 200, 255];
+            return getHighlightedFillColor(feature, baseColor);
           }
           const nectar = nectarMax[feature.id];
           const baseColor = getNectarColor(nectar);
-          return getHighlightedColor(feature, baseColor);
+          return getHighlightedFillColor(feature, baseColor);
         },
         stroked: true,
         getLineColor: getSelectionLineColor,
@@ -378,12 +381,12 @@ function Map() {
         filled: true,
         getFillColor: (feature) => {
           if (!pollenMax || !pollenMax[feature.id]) {
-            const baseColor = [200, 200, 200, 100];
-            return getHighlightedColor(feature, baseColor);
+            const baseColor = [200, 200, 200, 255];
+            return getHighlightedFillColor(feature, baseColor);
           }
           const pollen = pollenMax[feature.id];
-          const baseColor = typeof getPollenColor === 'function' ? getPollenColor(pollen) : [255, 200, 0, 180];
-          return getHighlightedColor(feature, baseColor);
+          const baseColor = typeof getPollenColor === 'function' ? getPollenColor(pollen) : [255, 200, 0, 255];
+          return getHighlightedFillColor(feature, baseColor);
         },
         stroked: true,
         getLineColor: getSelectionLineColor,
@@ -414,20 +417,20 @@ function Map() {
           const l3Code = feature.properties.L3_code;
           
           if (!l1Code || !l2Code || !l3Code) {
-            const baseColor = [200, 200, 200, 100]; // Gray for missing codes
-            return getHighlightedColor(feature, baseColor);
+            const baseColor = [200, 200, 200, 255]; // Gray for missing codes
+            return getHighlightedFillColor(feature, baseColor);
           }
           
           const codeKey = `${l1Code}-${l2Code}-${l3Code}`;
           const vegetationType = vegetationMapping[codeKey];
           
           if (!vegetationType) {
-            const baseColor = [200, 200, 200, 100]; // Gray for unmapped
-            return getHighlightedColor(feature, baseColor);
+            const baseColor = [200, 200, 200, 255]; // Gray for unmapped
+            return getHighlightedFillColor(feature, baseColor);
           }
           
           const baseColor = getVegetationColor(vegetationType);
-          return getHighlightedColor(feature, baseColor);
+          return getHighlightedFillColor(feature, baseColor);
         },
         stroked: true,
         getLineColor: getSelectionLineColor,

@@ -5,7 +5,6 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import LandUseHistogram from './components/Histogram/LandUseHistogram';
 import TimeSeriesChart from './components/TimeSeriesChart';
-import { selectMultipleFeatures } from './store/reducers/selectionReducer';
 import { setSelectedTimePoint } from './store/timeSlice';
 import './App.css';
 

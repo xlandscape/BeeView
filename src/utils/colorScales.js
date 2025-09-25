@@ -372,7 +372,7 @@ export const getVegetationColor = (vegetationType) => {
 
 export const getNectarColor = (value) => {
   const min = 0;
-  const max = 0.0003000001;
+  const max = 0.00009900; // Updated to match actual data range (110% of actual max)
   // Clamp and normalize value
   const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
   // Interpolate: white to red
@@ -384,7 +384,7 @@ export const getNectarColor = (value) => {
 
 export const getPollenColor = (value) => {
   const min = 0;
-  const max = 0.0001000001;
+  const max = 0.06600000; // Updated to match actual data range (110% of actual max)
   // Clamp and normalize value
   const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
   // Interpolate: white to red
