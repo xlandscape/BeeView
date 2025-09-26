@@ -408,17 +408,18 @@ export const getBeePopulationColor = (value, metric, maxValue = null) => {
   }
   
   // Define max values and color schemes for different bee population metrics
+  // Updated to match actual metrics from load_bee_population.py
   const metricConfig = {
-    'totalEggs': { max: 2000, color: [255, 255, 0] }, // Yellow
-    'totalLarvae': { max: 2000, color: [255, 165, 0] }, // Orange
-    'totalPupae': { max: 2000, color: [255, 140, 0] }, // Dark orange
-    'totalIHbees': { max: 10000, color: [0, 0, 255] }, // Blue
-    'totalForagers': { max: 5000, color: [0, 255, 0] }, // Green
-    'totalIHbees + totalForagers': { max: 15000, color: [128, 0, 128] }, // Purple
-    'totalDroneEggs': { max: 200, color: [255, 192, 203] }, // Pink
-    'totalDroneLarvae': { max: 200, color: [255, 20, 147] }, // Deep pink
-    'totalDronePupae': { max: 200, color: [199, 21, 133] }, // Medium violet red
-    'totalDrones': { max: 100, color: [139, 0, 139] }, // Dark magenta
+    'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae': { 
+      max: 25000, color: [255, 0, 0] }, // Red for total colony size
+    'TotalIHbees + TotalForagers': { 
+      max: 15000, color: [128, 0, 128] }, // Purple for adults
+    'TotalDroneEggs + TotalEggs': { 
+      max: 2200, color: [255, 255, 0] }, // Yellow for all eggs
+    'TotalDroneLarvae + TotalLarvae': { 
+      max: 2200, color: [255, 165, 0] }, // Orange for all larvae  
+    'TotalDronePupae + TotalPupae': { 
+      max: 2200, color: [255, 140, 0] }, // Dark orange for all pupae
   };
   
   const config = metricConfig[metric];
@@ -457,4 +458,17 @@ export const getBeePopulationMaxValues = (timeSeriesData) => {
   });
   
   return maxValues;
+};
+
+// Map friendly layer names to actual database metric names
+export const getBeePopulationMetricName = (layerName) => {
+  const layerToMetricMapping = {
+    'TotalColony': 'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae',
+    'TotalAdults': 'TotalIHbees + TotalForagers',
+    'AllEggs': 'TotalDroneEggs + TotalEggs',
+    'AllLarvae': 'TotalDroneLarvae + TotalLarvae',
+    'AllPupae': 'TotalDronePupae + TotalPupae'
+  };
+  
+  return layerToMetricMapping[layerName] || layerName;
 };

@@ -36,35 +36,20 @@ function Sidebar() {
           </LayerControls>
           
           <h3 className="sidebar-section-header">Bee Population</h3>
-          <LayerControls layer="TotalEggs" label="Total Eggs">
-            {/* Add controls here */}
+          <LayerControls layer="TotalColony" label="Total Colony">
+            {/* Total Colony Size: All bees + all brood */}
           </LayerControls>
-          <LayerControls layer="TotalLarvae" label="Total Larvae">
-            {/* Add controls here */}
+          <LayerControls layer="TotalAdults" label="Adults (Workers)">
+            {/* In-hive bees + Foragers */}
           </LayerControls>
-          <LayerControls layer="TotalPupae" label="Total Pupae">
-            {/* Add controls here */}
+          <LayerControls layer="AllEggs" label="All Eggs">
+            {/* Worker + Drone eggs combined */}
           </LayerControls>
-          <LayerControls layer="TotalIHbees" label="In-Hive Bees">
-            {/* Add controls here */}
+          <LayerControls layer="AllLarvae" label="All Larvae">
+            {/* Worker + Drone larvae combined */}
           </LayerControls>
-          <LayerControls layer="TotalForagers" label="Foragers">
-            {/* Add controls here */}
-          </LayerControls>
-          <LayerControls layer="TotalWorkers" label="Total Workers">
-            {/* Add controls here */}
-          </LayerControls>
-          <LayerControls layer="TotalDroneEggs" label="Drone Eggs">
-            {/* Add controls here */}
-          </LayerControls>
-          <LayerControls layer="TotalDroneLarvae" label="Drone Larvae">
-            {/* Add controls here */}
-          </LayerControls>
-          <LayerControls layer="TotalDronePupae" label="Drone Pupae">
-            {/* Add controls here */}
-          </LayerControls>
-          <LayerControls layer="TotalDrones" label="Total Drones">
-            {/* Add controls here */}
+          <LayerControls layer="AllPupae" label="All Pupae">
+            {/* Worker + Drone pupae combined */}
           </LayerControls>
         </div>
       )}

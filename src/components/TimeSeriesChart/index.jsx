@@ -195,132 +195,67 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         </div>
       )}
       
-      {/* Bee Population Charts */}
-      {activeTab === 'bee-population' && layers.TotalEggs?.visible && (
+      {/* Bee Population Charts - Updated to match new metrics from load_bee_population.py */}
+      {activeTab === 'bee-population' && layers.TotalColony?.visible && (
         <div className="mb-6">
           <SingleTimeSeriesChart
-            data={getBeeChartData('totalEggs')}
-            dataKey="totalEggs"
-            title="Total Eggs"
-            color="#FFA500"
+            data={getBeeChartData('TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae')}
+            dataKey="TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae"
+            title="Total Colony Size"
+            color="#FF0000"
+            yAxisLabel="Total Population"
+            height={300}
+          />
+        </div>
+      )}
+      
+      {activeTab === 'bee-population' && layers.TotalAdults?.visible && (
+        <div className="mb-6">
+          <SingleTimeSeriesChart
+            data={getBeeChartData('TotalIHbees + TotalForagers')}
+            dataKey="TotalIHbees + TotalForagers"
+            title="Adults (Workers)"
+            color="#800080"
+            yAxisLabel="Number of Adult Bees"
+            height={300}
+          />
+        </div>
+      )}
+      
+      {activeTab === 'bee-population' && layers.AllEggs?.visible && (
+        <div className="mb-6">
+          <SingleTimeSeriesChart
+            data={getBeeChartData('TotalDroneEggs + TotalEggs')}
+            dataKey="TotalDroneEggs + TotalEggs"
+            title="All Eggs"
+            color="#FFFF00"
             yAxisLabel="Number of Eggs"
             height={300}
           />
         </div>
       )}
       
-      {activeTab === 'bee-population' && layers.TotalLarvae?.visible && (
+      {activeTab === 'bee-population' && layers.AllLarvae?.visible && (
         <div className="mb-6">
           <SingleTimeSeriesChart
-            data={getBeeChartData('totalLarvae')}
-            dataKey="totalLarvae"
-            title="Total Larvae"
-            color="#FF6347"
+            data={getBeeChartData('TotalDroneLarvae + TotalLarvae')}
+            dataKey="TotalDroneLarvae + TotalLarvae"
+            title="All Larvae"
+            color="#FFA500"
             yAxisLabel="Number of Larvae"
             height={300}
           />
         </div>
       )}
       
-      {activeTab === 'bee-population' && layers.TotalPupae?.visible && (
+      {activeTab === 'bee-population' && layers.AllPupae?.visible && (
         <div className="mb-6">
           <SingleTimeSeriesChart
-            data={getBeeChartData('totalPupae')}
-            dataKey="totalPupae"
-            title="Total Pupae"
-            color="#FF4500"
+            data={getBeeChartData('TotalDronePupae + TotalPupae')}
+            dataKey="TotalDronePupae + TotalPupae"
+            title="All Pupae"
+            color="#FF8C00"
             yAxisLabel="Number of Pupae"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalIHbees?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('totalIHbees')}
-            dataKey="totalIHbees"
-            title="In-Hive Bees"
-            color="#0000FF"
-            yAxisLabel="Number of In-Hive Bees"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalForagers?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('totalForagers')}
-            dataKey="totalForagers"
-            title="Foragers"
-            color="#00FF00"
-            yAxisLabel="Number of Foragers"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalWorkers?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('totalIHbees + totalForagers')}
-            dataKey="totalIHbees + totalForagers"
-            title="Total Workers"
-            color="#800080"
-            yAxisLabel="Number of Workers"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalDroneEggs?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('totalDroneEggs')}
-            dataKey="totalDroneEggs"
-            title="Drone Eggs"
-            color="#FFC0CB"
-            yAxisLabel="Number of Drone Eggs"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalDroneLarvae?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('totalDroneLarvae')}
-            dataKey="totalDroneLarvae"
-            title="Drone Larvae"
-            color="#FF1493"
-            yAxisLabel="Number of Drone Larvae"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalDronePupae?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('totalDronePupae')}
-            dataKey="totalDronePupae"
-            title="Drone Pupae"
-            color="#C71585"
-            yAxisLabel="Number of Drone Pupae"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalDrones?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('totalDrones')}
-            dataKey="totalDrones"
-            title="Drones"
-            color="#8B008B"
-            yAxisLabel="Number of Drones"
             height={300}
           />
         </div>
