@@ -53,6 +53,7 @@ function Map() {
   const [beePopulationMaxValues, setBeePopulationMaxValues] = useState({});
   const [beehiveLocation, setBeehiveLocation] = useState(null);
   const [vegetationMapping, setVegetationMapping] = useState(null);
+  const [debugMode, setDebugMode] = useState(false); // 🐛 Debug mode toggle
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
   const layerVisibility = useSelector(state => state.layers);
@@ -149,16 +150,24 @@ function Map() {
     loadBeehiveLocation();
   }, []); // Empty dependency array - run only once
 
-  // Load vegetation mapping data once  
+  // Load vegetation mapping data once
   useEffect(() => {
     const loadVegetationMapping = async () => {
       try {
-        const response = await fetch(buildApiUrl('/api/vegetation-codes-map'));
+        const response = await fetch(buildApiUrl('/api/features/vegetation-mapping'));
         if (response.ok) {
           const data = await response.json();
-          setVegetationMapping(data.mapping);
-          dispatch(setVegetationCodesMap(data.mapping));
-          console.log('Vegetation mapping loaded:', data.mapping);
+          // Convert the new format to a lookup by feature ID
+          const featureVegetationMap = {};
+          data.feature_vegetation_mappings.forEach(mapping => {
+            featureVegetationMap[mapping.feature_id] = {
+              vegetation_class: mapping.vegetation_class,
+              vegetation_name: mapping.vegetation_name
+            };
+          });
+          setVegetationMapping(featureVegetationMap);
+          dispatch(setVegetationCodesMap(featureVegetationMap));
+          console.log('Vegetation mapping loaded:', featureVegetationMap);
         } else {
           console.warn('Vegetation mapping not found');
         }
@@ -166,7 +175,7 @@ function Map() {
         console.error('Error loading vegetation mapping:', error);
       }
     };
-    
+
     loadVegetationMapping();
   }, []); // Empty dependency array - run only once
 
@@ -256,6 +265,23 @@ function Map() {
     }
   }, [debouncedLoadViewportData, lastZoom]);
 
+  // Keyboard shortcut for debug mode (Ctrl/Cmd + D)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'd') {
+        event.preventDefault();
+        setDebugMode(prev => {
+          const newMode = !prev;
+          console.log(`🐛 Debug mode ${newMode ? 'ENABLED' : 'DISABLED'} (via Ctrl/Cmd+D) - Click on features to see detailed information in console`);
+          return newMode;
+        });
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Note: Bee population data has no spatial resolution - it represents colony-wide metrics
   // that are the same for all polygons. Therefore, bee population data is only displayed
   // in time series charts, not as map layers.
@@ -271,12 +297,99 @@ function Map() {
     };
   }, [geoJsonData, activeFilters]);
 
-  // Simplified click handler - only handles selection
-  const handleFeatureClick = useCallback((info) => {
+  // Enhanced click handler with comprehensive debugging
+  const handleFeatureClick = useCallback(async (info) => {
     if (info.object) {
-      dispatch(selectFeature(info.object.id));
+      const featureId = info.object.id;
+      dispatch(selectFeature(featureId));
+      
+      // 🐛 DEBUG: Only show debug info when debug mode is enabled
+      if (debugMode) {
+        console.group(`🐛 DEBUG: Selected Feature ${featureId}`);
+        
+        // Basic feature info
+        console.log('📍 Feature Object:', info.object);
+        console.log('🗺️  Feature Properties:', info.object.properties);
+        console.log('📐 Geometry Type:', info.object.geometry?.type);
+        console.log('🎯 Click Coordinates:', info.coordinate);
+        
+        // Current UI state
+        console.log('⏰ Selected Time Point:', selectedTimePoint);
+        console.log('👁️  Layer Visibility:', layerVisibility);
+        console.log('🔍 Active Filters:', activeFilters);
+        console.log('📋 All Selected Features:', selectedFeatureIds);
+        
+        // Data availability
+        console.log('📊 Data Availability:');
+        console.log('  - GeoJSON Data:', !!geoJsonData);
+        console.log('  - Nectar Max Data:', !!nectarMax);
+        console.log('  - Pollen Max Data:', !!pollenMax);
+        console.log('  - Bee Population Data:', !!beePopulationData);
+        console.log('  - Vegetation Mapping:', !!vegetationMapping);
+        
+        // Try to fetch detailed data for this feature
+        try {
+          console.log('🔄 Fetching detailed data for feature...');
+          
+          // Get nectar timeseries if available
+          try {
+            const nectarResponse = await fetch(buildApiUrl(`/nectar/timeseries/${featureId}`));
+            if (nectarResponse.ok) {
+              const nectarData = await nectarResponse.json();
+              console.log('🌺 Nectar Timeseries:', nectarData.nectar_timeseries?.slice(0, 10), '... (first 10 values)');
+              console.log('🌺 Nectar Stats:', {
+                length: nectarData.nectar_timeseries?.length,
+                min: Math.min(...(nectarData.nectar_timeseries || [])),
+                max: Math.max(...(nectarData.nectar_timeseries || [])),
+                avg: (nectarData.nectar_timeseries || []).reduce((a, b) => a + b, 0) / (nectarData.nectar_timeseries?.length || 1)
+              });
+            } else {
+              console.warn('⚠️  No nectar data available for feature');
+            }
+          } catch (err) {
+            console.warn('⚠️  Error fetching nectar data:', err.message);
+          }
+          
+          // Get pollen timeseries if available
+          try {
+            const pollenResponse = await fetch(buildApiUrl(`/pollen/timeseries/${featureId}`));
+            if (pollenResponse.ok) {
+              const pollenData = await pollenResponse.json();
+              console.log('🌻 Pollen Timeseries:', pollenData.pollen_timeseries?.slice(0, 10), '... (first 10 values)');
+              console.log('🌻 Pollen Stats:', {
+                length: pollenData.pollen_timeseries?.length,
+                min: Math.min(...(pollenData.pollen_timeseries || [])),
+                max: Math.max(...(pollenData.pollen_timeseries || [])),
+                avg: (pollenData.pollen_timeseries || []).reduce((a, b) => a + b, 0) / (pollenData.pollen_timeseries?.length || 1)
+              });
+            } else {
+              console.warn('⚠️  No pollen data available for feature');
+            }
+          } catch (err) {
+            console.warn('⚠️  Error fetching pollen data:', err.message);
+          }
+          
+          // Get vegetation info if available
+          try {
+            const vegetationResponse = await fetch(buildApiUrl(`/api/vegetation/feature/${featureId}`));
+            if (vegetationResponse.ok) {
+              const vegetationData = await vegetationResponse.json();
+              console.log('🌿 Vegetation Data:', vegetationData);
+            } else {
+              console.warn('⚠️  No vegetation data available for feature');
+            }
+          } catch (err) {
+            console.warn('⚠️  Error fetching vegetation data:', err.message);
+          }
+          
+        } catch (err) {
+          console.error('❌ Error fetching detailed feature data:', err);
+        }
+        
+        console.groupEnd();
+      }
     }
-  }, [dispatch]);
+  }, [dispatch, debugMode, selectedTimePoint, layerVisibility, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping]);
 
   // Helper function to get fill color with opacity-based highlighting
   const getHighlightedFillColor = useCallback((feature, baseColor) => {
@@ -412,23 +525,21 @@ function Map() {
         data: filteredGeoJsonData.features,
         filled: true,
         getFillColor: (feature) => {
-          const l1Code = feature.properties.L1_code;
-          const l2Code = feature.properties.L2_code;
-          const l3Code = feature.properties.L3_code;
-          
-          if (!l1Code || !l2Code || !l3Code) {
-            const baseColor = [200, 200, 200, 255]; // Gray for missing codes
+          const featureId = feature.id;
+
+          if (!featureId || !vegetationMapping || !vegetationMapping[featureId]) {
+            const baseColor = [200, 200, 200, 255]; // Gray for missing mapping
             return getHighlightedFillColor(feature, baseColor);
           }
-          
-          const codeKey = `${l1Code}-${l2Code}-${l3Code}`;
-          const vegetationType = vegetationMapping[codeKey];
-          
+
+          const vegetationInfo = vegetationMapping[featureId];
+          const vegetationType = vegetationInfo.vegetation_name;
+
           if (!vegetationType) {
             const baseColor = [200, 200, 200, 255]; // Gray for unmapped
             return getHighlightedFillColor(feature, baseColor);
           }
-          
+
           const baseColor = getVegetationColor(vegetationType);
           return getHighlightedFillColor(feature, baseColor);
         },
@@ -533,6 +644,31 @@ function Map() {
           Error: {error}
         </div>
       )}
+      
+      {/* Debug mode toggle button */}
+      <button
+        onClick={() => {
+          setDebugMode(!debugMode);
+          console.log(`🐛 Debug mode ${!debugMode ? 'ENABLED' : 'DISABLED'} - Click on features to see detailed information in console`);
+        }}
+        style={{
+          position: 'absolute',
+          bottom: '10px',
+          right: '10px',
+          background: debugMode ? '#4CAF50' : '#757575',
+          color: 'white',
+          border: 'none',
+          padding: '8px 12px',
+          borderRadius: '4px',
+          fontSize: '12px',
+          cursor: 'pointer',
+          zIndex: 1000,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+        }}
+        title={debugMode ? 'Disable debug mode' : 'Enable debug mode - click features to see detailed info in console'}
+      >
+        🐛 Debug: {debugMode ? 'ON' : 'OFF'}
+      </button>
     </div>
   );
 }

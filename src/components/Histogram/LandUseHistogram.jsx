@@ -162,21 +162,15 @@ function LandUseHistogram() {
       } else if (level === 'L3') {
         key = props.L3_label || 'Unknown';
       } else if (level === 'vegetation') {
-        // Use vegetation mapping - match map component logic exactly
-        const l1Code = props.L1_code;
-        const l2Code = props.L2_code; 
-        const l3Code = props.L3_code;
-        
-        if (!l1Code || !l2Code || !l3Code) {
-          key = 'Missing Codes';
+        // Use vegetation mapping - match map component logic with new format
+        const featureId = feature.id;
+
+        if (!featureId || !vegetationCodesMap || !vegetationCodesMap[featureId]) {
+          key = 'No Vegetation Data';
         } else {
-          const vegetationKey = `${l1Code}-${l2Code}-${l3Code}`;
-          const vegetation = vegetationCodesMap && vegetationCodesMap[vegetationKey];
-          if (!vegetation) {
-            key = 'Unmapped Codes';
-          } else {
-            key = vegetation || 'Unknown Vegetation';
-          }
+          const vegetationInfo = vegetationCodesMap[featureId];
+          const vegetationType = vegetationInfo.vegetation_name;
+          key = vegetationType || 'Unknown Vegetation';
         }
       }
 
