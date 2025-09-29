@@ -51,12 +51,12 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
       .call(d3.axisLeft(y));
 
     // Add axis labels
-    svg.append("text")
-      .attr("text-anchor", "middle")
-      .attr("x", width / 2)
-      .attr("y", chartHeight + margin.bottom - 10)
-      .style("font-size", "12px")
-      .text("Category");
+    // svg.append("text")
+    //   .attr("text-anchor", "middle")
+    //   .attr("x", width / 2)
+    //   .attr("y", chartHeight + margin.bottom - 10)
+    //   .style("font-size", "12px")
+    //   .text("Category");
 
     svg.append("text")
       .attr("text-anchor", "middle")

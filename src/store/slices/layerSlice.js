@@ -6,6 +6,7 @@ const initialState = {
   Nectar: { visible: false },
   Beehive: { visible: false },
   Vegetation: { visible: false },
+  Applications: { visible: false }, // Features with plant protection product applications
   // Bee population layers - updated to match actual metrics from load_bee_population.py
   TotalColony: { visible: false }, // All bees + all brood (TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae)
   TotalAdults: { visible: false }, // Adults/Workers (TotalIHbees + TotalForagers)

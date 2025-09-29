@@ -12,6 +12,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // import MapControls from './MapControls';
 import { selectFeature, clearSelection } from '../../store/reducers/selectionReducer';
 import { loadViewportData, loadViewportDataForTimePoint, loadTimePointData, loadBeePopulationData, loadBeePopulationTimeSeries, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
+import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
 
 // Disable viewport queries (for debugging)
@@ -53,6 +54,7 @@ function Map() {
   const [beePopulationMaxValues, setBeePopulationMaxValues] = useState({});
   const [beehiveLocation, setBeehiveLocation] = useState(null);
   const [vegetationMapping, setVegetationMapping] = useState(null);
+  const [applicationsData, setApplicationsData] = useState([]);
   const [debugMode, setDebugMode] = useState(false); // 🐛 Debug mode toggle
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
@@ -236,6 +238,38 @@ function Map() {
     loadBeeMetadata();
   }, [dispatch]);
 
+  // Load ALL applications data once for the applications layer
+  useEffect(() => {
+    const loadApplications = async () => {
+      try {
+        console.log('🚀 Map: Starting to load applications data...');
+        console.log('🚀 Map: Applications layer visibility:', layerVisibility.Applications?.visible);
+        // Load all applications data (no feature filter for the layer)
+        const data = await loadApplicationsData();
+        console.log('🚀 Map: Received applications data:', data);
+        setApplicationsData(data);
+        console.log(`✅ Map: Loaded ${data.length} total application records for applications layer`);
+      } catch (error) {
+        console.error('❌ Map: Failed to load applications data:', error);
+        setApplicationsData([]);
+      }
+    };
+    loadApplications();
+  }, []); // Load once on component mount
+
+  // Get applications data for selected features (for timeline)
+  const selectedApplicationsData = useMemo(() => {
+    console.log('🔍 Map: Computing selectedApplicationsData...', { 
+      applicationsDataLength: applicationsData?.length || 0,
+      selectedFeatureIdsLength: selectedFeatureIds?.length || 0,
+      selectedFeatureIds 
+    });
+    if (!applicationsData || selectedFeatureIds.length === 0) return [];
+    const filtered = applicationsData.filter(app => selectedFeatureIds.includes(app.lulc_feature_id));
+    console.log('🔍 Map: Filtered applications for selected features:', filtered.length, 'records');
+    return filtered;
+  }, [applicationsData, selectedFeatureIds]);
+
   // Handle viewport changes
   const handleViewStateChange = useCallback((evt) => {
     const newViewState = evt.viewState;
@@ -285,6 +319,21 @@ function Map() {
   // Note: Bee population data has no spatial resolution - it represents colony-wide metrics
   // that are the same for all polygons. Therefore, bee population data is only displayed
   // in time series charts, not as map layers.
+
+  // Get unique feature IDs that have applications
+  const featuresWithApplications = useMemo(() => {
+    console.log('🔍 Map: Computing featuresWithApplications...', { 
+      applicationsDataLength: applicationsData?.length || 0 
+    });
+    if (!applicationsData || applicationsData.length === 0) {
+      console.log('🔍 Map: No applications data, returning empty set');
+      return new Set();
+    }
+    const uniqueFeatureIds = new Set(applicationsData.map(app => app.lulc_feature_id));
+    console.log('🔍 Map: Features with applications:', uniqueFeatureIds.size, 'unique features');
+    console.log('🔍 Map: Sample feature IDs:', Array.from(uniqueFeatureIds).slice(0, 10));
+    return uniqueFeatureIds;
+  }, [applicationsData]);
 
   // Optimize data filtering with useMemo to prevent re-filtering on every render
   const filteredGeoJsonData = useMemo(() => {
@@ -389,7 +438,7 @@ function Map() {
         console.groupEnd();
       }
     }
-  }, [dispatch, debugMode, selectedTimePoint, layerVisibility, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping]);
+  }, [dispatch, debugMode, selectedTimePoint, layerVisibility, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping, applicationsData]);
 
   // Helper function to get fill color with opacity-based highlighting
   const getHighlightedFillColor = useCallback((feature, baseColor) => {
@@ -558,6 +607,56 @@ function Map() {
         },
         wireframe: false,
       }),
+    // Applications layer - shows features with plant protection product applications
+    (() => {
+      const shouldRender = layerVisibility.Applications?.visible && 
+                           filteredGeoJsonData &&
+                           featuresWithApplications.size > 0;
+      console.log('🎨 Map: Applications layer rendering decision:', {
+        layerVisible: layerVisibility.Applications?.visible,
+        hasGeoJsonData: !!filteredGeoJsonData,
+        featuresWithApplicationsCount: featuresWithApplications.size,
+        shouldRender
+      });
+      
+      if (!shouldRender) {
+        console.log('🎨 Map: Skipping applications layer rendering');
+        return null;
+      }
+
+      const applicationsFeatures = filteredGeoJsonData.features.filter(feature => featuresWithApplications.has(feature.id));
+      console.log('🎨 Map: Applications layer features:', applicationsFeatures.length, 'features to render');
+      console.log('🎨 Map: Debugging feature ID mismatch...');
+      console.log('🎨 Map: Sample GeoJSON feature IDs:', filteredGeoJsonData.features.slice(0, 5).map(f => f.id));
+      console.log('🎨 Map: Sample application feature IDs:', Array.from(featuresWithApplications).slice(0, 5));
+      console.log('🎨 Map: GeoJSON feature properties sample:', filteredGeoJsonData.features[0]?.properties);
+      
+      return new GeoJsonLayer({ 
+        id: 'applications-layer',
+        data: applicationsFeatures,
+        filled: true,
+        getFillColor: (feature) => {
+          // Semi-transparent orange overlay to indicate applications
+          // Use low opacity so underlying layers remain visible
+          const baseColor = [255, 107, 53, 80]; // Orange with 31% opacity (80/255)
+          return getHighlightedFillColor(feature, baseColor);
+        },
+        stroked: true,
+        getLineColor: getSelectionLineColor,
+        getLineWidth: getSelectionLineWidth,
+        lineWidthMinPixels: 1,
+        pickable: true,
+        autoHighlight: true,
+        onClick: handleFeatureClick,
+        // Performance optimizations
+        updateTriggers: {
+          getFillColor: [featuresWithApplications, layerVisibility.Applications.visible, selectedFeatureIds],
+          getLineColor: [selectedFeatureIds],
+          getLineWidth: [selectedFeatureIds]
+        },
+        wireframe: false,
+      });
+    })(), // Close the IIFE
     // Beehive location layer
     layerVisibility.Beehive?.visible && 
     beehiveLocation &&

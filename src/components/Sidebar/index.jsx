@@ -34,6 +34,9 @@ function Sidebar() {
           <LayerControls layer="Vegetation" label="Vegetation">
             {/* Add controls here */}
           </LayerControls>
+          <LayerControls layer="Applications" label="Applications">
+            {/* Features with plant protection product applications */}
+          </LayerControls>
           
           <h3 className="sidebar-section-header">Bee Population</h3>
           <LayerControls layer="TotalColony" label="Total Colony">

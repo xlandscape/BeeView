@@ -67,10 +67,12 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
 
   const fetchApplicationsData = useCallback(async () => {
     try {
+      console.log('🚀 TimeSeriesChart: Loading applications data for features:', selectedFeatureIds);
       const data = await loadApplicationsData(selectedFeatureIds);
+      console.log('✅ TimeSeriesChart: Received applications data:', data);
       setApplicationsData(data);
     } catch (err) {
-      console.error('Error fetching applications data:', err);
+      console.error('❌ TimeSeriesChart: Error fetching applications data:', err);
       setApplicationsData([]);
     }
   }, [selectedFeatureIds]);
