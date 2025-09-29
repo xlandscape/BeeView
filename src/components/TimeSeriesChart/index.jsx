@@ -3,13 +3,16 @@ import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedTimePoint, setAvailableTimePoints } from '../../store/timeSlice';
 import { clearSelection } from '../../store/reducers/selectionReducer';
 import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
+import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
+import TrellisTimeSeriesChart from '../TrellisTimeSeriesChart';
 import SingleTimeSeriesChart from '../SingleTimeSeriesChart';
 
 const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const dispatch = useDispatch();
   const [averageData, setAverageData] = useState([]);
   const [beePopulationData, setBeePopulationData] = useState(null);
+  const [applicationsData, setApplicationsData] = useState([]);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -62,6 +65,16 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     }
   }, []);
 
+  const fetchApplicationsData = useCallback(async () => {
+    try {
+      const data = await loadApplicationsData(selectedFeatureIds);
+      setApplicationsData(data);
+    } catch (err) {
+      console.error('Error fetching applications data:', err);
+      setApplicationsData([]);
+    }
+  }, [selectedFeatureIds]);
+
   // Transform bee population data to chart format
   const getBeeChartData = (metricKey) => {
     if (!beePopulationData || !beePopulationData.timeseries || !Array.isArray(beePopulationData.timeseries)) {
@@ -83,7 +96,8 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   useEffect(() => {
     fetchAverageData();
     fetchBeePopulationData();
-  }, [fetchAverageData, fetchBeePopulationData]);
+    fetchApplicationsData();
+  }, [fetchAverageData, fetchBeePopulationData, fetchApplicationsData]);
 
   // Add keyboard navigation
   useEffect(() => {
@@ -167,97 +181,115 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         </div>
       )}
       
-      {/* Nectar Chart */}
-      {activeTab === 'nectar-pollen' && layers.Nectar?.visible && (
+      {/* Nectar & Pollen Charts using Trellis Layout */}
+      {activeTab === 'nectar-pollen' && (
         <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={averageData}
-            dataKey="nectar_avg"
-            title="Nectar Concentration"
-            color="#2563eb"
-            yAxisLabel="Nectar Concentration"
-            height={300}
-          />
+          {(() => {
+            const seriesData = [];
+            
+            if (layers.Nectar?.visible) {
+              seriesData.push({
+                data: averageData,
+                dataKey: "nectar_avg",
+                title: "Nectar Concentration",
+                color: "#2563eb",
+                yAxisLabel: "Nectar Concentration"
+              });
+            }
+            
+            if (layers.Pollen?.visible) {
+              seriesData.push({
+                data: averageData,
+                dataKey: "pollen_avg",
+                title: "Pollen Concentration", 
+                color: "#dc2626",
+                yAxisLabel: "Pollen Concentration"
+              });
+            }
+            
+            return seriesData.length > 0 ? (
+              <TrellisTimeSeriesChart
+                seriesData={seriesData}
+                applicationData={applicationsData}
+                height={400}
+              />
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                No nectar/pollen layers visible. Enable layers in the controls.
+              </div>
+            );
+          })()}
         </div>
       )}
       
-      {/* Pollen Chart */}
-      {activeTab === 'nectar-pollen' && layers.Pollen?.visible && (
+      {/* Bee Population Charts using Trellis Layout */}
+      {activeTab === 'bee-population' && (
         <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={averageData}
-            dataKey="pollen_avg"
-            title="Pollen Concentration"
-            color="#dc2626"
-            yAxisLabel="Pollen Concentration"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {/* Bee Population Charts - Updated to match new metrics from load_bee_population.py */}
-      {activeTab === 'bee-population' && layers.TotalColony?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae')}
-            dataKey="TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae"
-            title="Total Colony Size"
-            color="#FF0000"
-            yAxisLabel="Total Population"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.TotalAdults?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('TotalIHbees + TotalForagers')}
-            dataKey="TotalIHbees + TotalForagers"
-            title="Adults (Workers)"
-            color="#800080"
-            yAxisLabel="Number of Adult Bees"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.AllEggs?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('TotalDroneEggs + TotalEggs')}
-            dataKey="TotalDroneEggs + TotalEggs"
-            title="All Eggs"
-            color="#FFFF00"
-            yAxisLabel="Number of Eggs"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.AllLarvae?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('TotalDroneLarvae + TotalLarvae')}
-            dataKey="TotalDroneLarvae + TotalLarvae"
-            title="All Larvae"
-            color="#FFA500"
-            yAxisLabel="Number of Larvae"
-            height={300}
-          />
-        </div>
-      )}
-      
-      {activeTab === 'bee-population' && layers.AllPupae?.visible && (
-        <div className="mb-6">
-          <SingleTimeSeriesChart
-            data={getBeeChartData('TotalDronePupae + TotalPupae')}
-            dataKey="TotalDronePupae + TotalPupae"
-            title="All Pupae"
-            color="#FF8C00"
-            yAxisLabel="Number of Pupae"
-            height={300}
-          />
+          {(() => {
+            const seriesData = [];
+            
+            if (layers.TotalColony?.visible) {
+              seriesData.push({
+                data: getBeeChartData('TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae'),
+                dataKey: "TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae",
+                title: "Total Colony Size",
+                color: "#FF0000",
+                yAxisLabel: "Total Population"
+              });
+            }
+            
+            if (layers.TotalAdults?.visible) {
+              seriesData.push({
+                data: getBeeChartData('TotalIHbees + TotalForagers'),
+                dataKey: "TotalIHbees + TotalForagers",
+                title: "Adults (Workers)",
+                color: "#800080",
+                yAxisLabel: "Number of Adult Bees"
+              });
+            }
+            
+            if (layers.AllEggs?.visible) {
+              seriesData.push({
+                data: getBeeChartData('TotalDroneEggs + TotalEggs'),
+                dataKey: "TotalDroneEggs + TotalEggs",
+                title: "All Eggs",
+                color: "#FFFF00",
+                yAxisLabel: "Number of Eggs"
+              });
+            }
+            
+            if (layers.AllLarvae?.visible) {
+              seriesData.push({
+                data: getBeeChartData('TotalDroneLarvae + TotalLarvae'),
+                dataKey: "TotalDroneLarvae + TotalLarvae",
+                title: "All Larvae",
+                color: "#FFA500",
+                yAxisLabel: "Number of Larvae"
+              });
+            }
+            
+            if (layers.AllPupae?.visible) {
+              seriesData.push({
+                data: getBeeChartData('TotalDronePupae + TotalPupae'),
+                dataKey: "TotalDronePupae + TotalPupae",
+                title: "All Pupae",
+                color: "#FF8C00",
+                yAxisLabel: "Number of Pupae"
+              });
+            }
+            
+            return seriesData.length > 0 ? (
+              <TrellisTimeSeriesChart
+                seriesData={seriesData}
+                applicationData={applicationsData}
+                height={500}
+              />
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                No bee population layers visible. Enable layers in the controls.
+              </div>
+            );
+          })()}
         </div>
       )}
 
