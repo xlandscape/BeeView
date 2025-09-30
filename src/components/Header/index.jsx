@@ -7,15 +7,15 @@ function Header() {
     <div className="header">
       <div className="header-title">
         <h1>BeeView</h1>
-        <span className="header-subtitle">xBeeForage Visualization</span>
+        <span className="header-subtitle">xPollinator Visualization</span>
       </div>
       <div className="header-actions">
-        <button className="header-button">
+        {/* <button className="header-button">
           <i className="fa fa-download"></i> Export
         </button>
         <button className="header-button">
           <i className="fa fa-question-circle"></i> Help
-        </button>
+        </button> */}
       </div>
     </div>
   );
