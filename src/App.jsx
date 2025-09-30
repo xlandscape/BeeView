@@ -52,6 +52,12 @@ function App() {
                 >
                   Bee Population
                 </button>
+                <button
+                  className={`tab-button ${activeChartTab === 'exposure' ? 'active' : ''}`}
+                  onClick={() => setActiveChartTab('exposure')}
+                >
+                  Exposure
+                </button>
               </div>
               
               {/* Chart Content - Always show TimeSeriesChart but filter based on active tab */}

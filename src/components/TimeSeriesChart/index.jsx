@@ -13,6 +13,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const [averageData, setAverageData] = useState([]);
   const [beePopulationData, setBeePopulationData] = useState(null);
   const [applicationsData, setApplicationsData] = useState([]);
+  const [exposureData, setExposureData] = useState([]);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -77,6 +78,33 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     }
   }, [selectedFeatureIds]);
 
+  const fetchExposureData = useCallback(async () => {
+    try {
+      console.log('🚀 TimeSeriesChart: Loading exposure data for features:', selectedFeatureIds);
+      
+      let url = buildApiUrl('/api/exposure/timeseries');
+      
+      // If features are selected, add them to the query
+      if (selectedFeatureIds.length > 0) {
+        const featureIdsStr = selectedFeatureIds.join(',');
+        url += `?feature_ids=${featureIdsStr}`;
+      }
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ TimeSeriesChart: Received exposure data:', data);
+      setExposureData(data.exposure_timeseries || []);
+    } catch (err) {
+      console.error('❌ TimeSeriesChart: Error fetching exposure data:', err);
+      setExposureData([]);
+    }
+  }, [selectedFeatureIds]);
+
   // Transform bee population data to chart format
   const getBeeChartData = (metricKey) => {
     if (!beePopulationData || !beePopulationData.timeseries || !Array.isArray(beePopulationData.timeseries)) {
@@ -99,7 +127,8 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     fetchAverageData();
     fetchBeePopulationData();
     fetchApplicationsData();
-  }, [fetchAverageData, fetchBeePopulationData, fetchApplicationsData]);
+    fetchExposureData();
+  }, [fetchAverageData, fetchBeePopulationData, fetchApplicationsData, fetchExposureData]);
 
   // Add keyboard navigation
   useEffect(() => {
@@ -144,6 +173,12 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   }
 
   const getChartTitle = () => {
+    if (activeTab === 'exposure') {
+      if (selectedFeatureIds.length === 0) {
+        return "Exposure Time Series - All Features";
+      }
+      return "Exposure Time Series - Selected Features";
+    }
     if (selectedFeatureIds.length === 0) {
       return "Time Series Charts - Overall Average (All Features)";
     }
@@ -235,7 +270,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
                 data: getBeeChartData('TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae'),
                 dataKey: "TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae",
                 title: "Total Colony Size",
-                color: "#FF0000",
+                color: "#1b9e77",
                 yAxisLabel: "Total Population"
               });
             }
@@ -245,7 +280,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
                 data: getBeeChartData('TotalIHbees + TotalForagers'),
                 dataKey: "TotalIHbees + TotalForagers",
                 title: "Adults (Workers)",
-                color: "#800080",
+                color: "#d95f02",
                 yAxisLabel: "Number of Adult Bees"
               });
             }
@@ -255,7 +290,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
                 data: getBeeChartData('TotalDroneEggs + TotalEggs'),
                 dataKey: "TotalDroneEggs + TotalEggs",
                 title: "All Eggs",
-                color: "#FFFF00",
+                color: "#7570b3",
                 yAxisLabel: "Number of Eggs"
               });
             }
@@ -265,7 +300,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
                 data: getBeeChartData('TotalDroneLarvae + TotalLarvae'),
                 dataKey: "TotalDroneLarvae + TotalLarvae",
                 title: "All Larvae",
-                color: "#FFA500",
+                color: "#e7298a",
                 yAxisLabel: "Number of Larvae"
               });
             }
@@ -275,7 +310,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
                 data: getBeeChartData('TotalDronePupae + TotalPupae'),
                 dataKey: "TotalDronePupae + TotalPupae",
                 title: "All Pupae",
-                color: "#FF8C00",
+                color: "#66a61e",
                 yAxisLabel: "Number of Pupae"
               });
             }
@@ -289,6 +324,49 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
             ) : (
               <div className="text-center py-8 text-gray-500">
                 No bee population layers visible. Enable layers in the controls.
+              </div>
+            );
+          })()}
+        </div>
+      )}
+      
+      {/* Exposure Charts using Trellis Layout */}
+      {activeTab === 'exposure' && (
+        <div className="mb-6">
+          {(() => {
+            const seriesData = [
+              {
+                data: exposureData,
+                dataKey: "nectar_exposure",
+                title: "Nectar Exposure",
+                color: "#2563eb",
+                yAxisLabel: "Nectar Exposure"
+              },
+              {
+                data: exposureData,
+                dataKey: "pollen_exposure",
+                title: "Pollen Exposure", 
+                color: "#dc2626",
+                yAxisLabel: "Pollen Exposure"
+              },
+              {
+                data: exposureData,
+                dataKey: "contact_exposure",
+                title: "Contact Exposure",
+                color: "#059669",
+                yAxisLabel: "Contact Exposure"
+              }
+            ];
+            
+            return exposureData.length > 0 ? (
+              <TrellisTimeSeriesChart
+                seriesData={seriesData}
+                applicationData={applicationsData}
+                height={500}
+              />
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                No exposure data available. Check if applications data is loaded.
               </div>
             );
           })()}
