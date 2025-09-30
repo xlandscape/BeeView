@@ -17,8 +17,8 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
     // Clear previous chart
     d3.select(svgRef.current).selectAll("*").remove();
 
-    // Set up dimensions
-    const margin = { top: 20, right: 30, bottom: 60, left: 60 };
+    // Set up dimensions for horizontal layout
+    const margin = { top: 20, right: 60, bottom: 30, left: 150 }; // Increased left margin for labels
     const width = svgRef.current.clientWidth - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
 
@@ -27,58 +27,56 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Set up scales
-    const x = d3.scaleBand()
+    // Helper function to abbreviate long labels
+    const abbreviateLabel = (label, maxLength = 30) => {
+      if (label.length <= maxLength) return label;
+      return label.substring(0, maxLength - 3) + '...';
+    };
+
+    // Set up scales - SWAPPED for horizontal layout
+    const y = d3.scaleBand()
       .domain(data.map(d => d.type))
-      .range([0, width])
+      .range([0, chartHeight])
       .padding(0.1);
 
-    const y = d3.scaleLinear()
-      .domain([0, d3.max(data, d => d.area)])
-      .nice()
-      .range([chartHeight, 0]);
+    const maxArea = d3.max(data, d => d.area);
+    const x = d3.scaleLinear()
+      .domain([0, maxArea])
+      .range([0, width]);
 
-    // Draw axes
+    // Draw axes with only two ticks: 0 and maximum
     svg.append("g")
       .attr("transform", `translate(0,${chartHeight})`)
-      .call(d3.axisBottom(x))
-      .selectAll("text")
-      .attr("transform", "rotate(-45)")
-      .style("text-anchor", "end")
-      .style("font-size", "10px");
+      .call(d3.axisBottom(x).tickValues([0, maxArea]).tickFormat(d3.format(".1f")));
 
     svg.append("g")
-      .call(d3.axisLeft(y));
+      .call(d3.axisLeft(y))
+      .selectAll("text")
+      .style("font-size", "11px")
+      .style("text-anchor", "end")
+      .text(d => abbreviateLabel(d));
 
-    // Add axis labels
-    // svg.append("text")
-    //   .attr("text-anchor", "middle")
-    //   .attr("x", width / 2)
-    //   .attr("y", chartHeight + margin.bottom - 10)
-    //   .style("font-size", "12px")
-    //   .text("Category");
-
+    // X-axis label
     svg.append("text")
       .attr("text-anchor", "middle")
-      .attr("transform", "rotate(-90)")
-      .attr("y", -margin.left + 15)
-      .attr("x", -chartHeight / 2)
+      .attr("x", width / 2)
+      .attr("y", chartHeight + margin.bottom - 5)
       .style("font-size", "12px")
-      .text("Feature Count");
+      .text("Area (Hectares)");
 
     // Check if any features are selected
     const hasSelection = selectedFeatureIds.length > 0;
 
-    // Draw bars
+    // Draw horizontal bars
     svg.selectAll(".bar")
       .data(data)
       .enter()
       .append("rect")
       .attr("class", "bar")
-      .attr("x", d => x(d.type))
-      .attr("y", d => y(d.area))
-      .attr("width", x.bandwidth())
-      .attr("height", d => chartHeight - y(d.area))
+      .attr("x", 0)
+      .attr("y", d => y(d.type))
+      .attr("width", d => x(d.area))
+      .attr("height", y.bandwidth())
       .attr("fill", d => {
         const color = colorFunction(d.type);
         return `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.8)`;
@@ -110,7 +108,7 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
           .style("top", (event.pageY - 10) + "px")
           .html(`
             <div><strong>${d.type}</strong></div>
-            <div>Count: ${d.area.toFixed(0)}</div>
+            <div><strong>Area:</strong> ${d.area < 0.1 ? d.area.toFixed(3) : d.area.toFixed(1)} ha</div>
             <div>Features: ${d.featureIds.length}</div>
           `);
       })
@@ -174,9 +172,8 @@ function LandUseHistogram() {
         }
       }
 
-      // For now, just count features (each feature = 1 unit)
-      // TODO: Calculate actual area when geometry is properly available
-      const area = 1;
+      // Use actual area from feature properties (in hectares)
+      const area = parseFloat(props.area_hectares) || 0;
 
       if (!aggregatedData[key]) {
         aggregatedData[key] = {
@@ -214,7 +211,7 @@ function LandUseHistogram() {
     }}>
       <h3 style={{ margin: '0 0 20px 0', color: '#333' }}>Land Use Distribution</h3>
       <p style={{ fontSize: '12px', color: '#666', marginBottom: '20px' }}>
-        Click bars to select features on the map. Selected features will be highlighted with full opacity while others are dimmed. Showing top 20 categories by feature count.
+        Click bars to select features on the map. Selected features will be highlighted with full opacity while others are dimmed. Showing top 20 categories by total area (hectares).
       </p>
 
       <SingleHistogram 
