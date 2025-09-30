@@ -6,7 +6,6 @@ import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
 import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
 import TrellisTimeSeriesChart from '../TrellisTimeSeriesChart';
-import SingleTimeSeriesChart from '../SingleTimeSeriesChart';
 
 const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const dispatch = useDispatch();
