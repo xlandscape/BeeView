@@ -40,17 +40,25 @@ const TrellisTimeSeriesChart = ({
 
     // Create panels for each series
     seriesData.forEach((series, index) => {
-      const { data, dataKey, title, color, yAxisLabel } = series;
-      if (!data || data.length === 0) return;
+      const { title, color, yAxisLabel } = series;
+      // Multi-line mode: series.lines = [{data, dataKey, color, label}, ...].
+      // Single-line mode (legacy): series.data + series.dataKey.
+      const lines = (series.lines && series.lines.length > 0)
+        ? series.lines
+        : (series.data && series.dataKey
+            ? [{ data: series.data, dataKey: series.dataKey, color, label: title }]
+            : []);
+      if (lines.length === 0 || lines.every(l => !l.data || l.data.length === 0)) return;
+      const isMultiLine = (series.lines && series.lines.length > 0);
 
       const panelY = index * (panelHeight + 20);
       const g = mainG.append('g')
         .attr('transform', `translate(0, ${panelY})`);
 
-      // Y-scale for this panel
-      const values = data.map(d => d[dataKey] || 0);
+      // Y-scale across all lines in this panel.
+      const allValues = lines.flatMap(l => (l.data || []).map(d => d[l.dataKey] || 0));
       const yScale = d3.scaleLinear()
-        .domain(d3.extent(values))
+        .domain(d3.extent(allValues))
         .nice()
         .range([panelHeight, 0]);
 
@@ -86,30 +94,50 @@ const TrellisTimeSeriesChart = ({
         .style('fill', '#666')
         .text(yAxisLabel);
 
-      // Create line generator
-      const line = d3.line()
-        .x(d => xScale(d.day))
-        .y(d => yScale(d[dataKey] || 0))
-        .curve(d3.curveMonotoneX);
+      // Draw each line in the panel.
+      lines.forEach((ln) => {
+        const lineGen = d3.line()
+          .x(d => xScale(d.day))
+          .y(d => yScale(d[ln.dataKey] || 0))
+          .curve(d3.curveMonotoneX);
+        g.append('path')
+          .datum(ln.data)
+          .attr('fill', 'none')
+          .attr('stroke', ln.color)
+          .attr('stroke-width', 2)
+          .attr('d', lineGen);
+        // Data-point dots only in single-line mode (avoid clutter).
+        if (!isMultiLine) {
+          g.selectAll(`.data-point-${index}`)
+            .data(ln.data)
+            .enter().append('circle')
+            .attr('class', `data-point-${index}`)
+            .attr('cx', d => xScale(d.day))
+            .attr('cy', d => yScale(d[ln.dataKey] || 0))
+            .attr('r', 2)
+            .attr('fill', ln.color)
+            .attr('opacity', 0.6);
+        }
+      });
 
-      // Draw line
-      g.append('path')
-        .datum(data)
-        .attr('fill', 'none')
-        .attr('stroke', color)
-        .attr('stroke-width', 2)
-        .attr('d', line);
-
-      // Add dots for data points (optional, can be toggled)
-      g.selectAll('.data-point')
-        .data(data)
-        .enter().append('circle')
-        .attr('class', 'data-point')
-        .attr('cx', d => xScale(d.day))
-        .attr('cy', d => yScale(d[dataKey] || 0))
-        .attr('r', 2)
-        .attr('fill', color)
-        .attr('opacity', 0.6);
+      // Per-panel legend in multi-line mode.
+      if (isMultiLine) {
+        const legendG = g.append('g')
+          .attr('transform', `translate(${width - 12}, 6)`);
+        lines.forEach((ln, i) => {
+          const row = legendG.append('g')
+            .attr('transform', `translate(0, ${i * 14})`);
+          row.append('line')
+            .attr('x1', -22).attr('x2', -8).attr('y1', 6).attr('y2', 6)
+            .attr('stroke', ln.color).attr('stroke-width', 2);
+          row.append('text')
+            .attr('x', -28).attr('y', 9)
+            .style('text-anchor', 'end')
+            .style('font-size', '10px')
+            .style('fill', '#374151')
+            .text(ln.label || ln.dataKey);
+        });
+      }
 
       // Add vertical line for selected time point
       if (selectedTimePoint) {
@@ -136,14 +164,21 @@ const TrellisTimeSeriesChart = ({
         .on('mousemove', function(event) {
           const [mouseX] = d3.pointer(event);
           const day = Math.round(xScale.invert(mouseX));
-          const dayData = data.find(d => d.day === day);
-          
-          if (dayData) {
+          const tooltipLines = lines
+            .map((ln) => {
+              const dd = ln.data?.find(d => d.day === day);
+              if (!dd) return null;
+              const v = dd[ln.dataKey] ?? 0;
+              const label = ln.label || ln.dataKey;
+              return `${label}: ${typeof v === 'number' ? v.toLocaleString() : v}`;
+            })
+            .filter(Boolean);
+          if (tooltipLines.length > 0) {
             setTooltip({
               show: true,
               x: event.pageX + 10,
               y: event.pageY - 10,
-              content: `Day ${day}: ${(dayData[dataKey] || 0).toLocaleString()}`
+              content: `Day ${day}\n${tooltipLines.join('\n')}`
             });
           }
         })

@@ -5,7 +5,9 @@ import { clearSelection } from '../../store/reducers/selectionReducer';
 import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
 import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
+import { RUN_COLOR_PALETTE } from '../../store/slices/runsSlice';
 import TrellisTimeSeriesChart from '../TrellisTimeSeriesChart';
+import CompareChart from '../CompareChart';
 
 const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const dispatch = useDispatch();
@@ -15,10 +17,14 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const [exposureData, setExposureData] = useState([]);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  
+  // Per-run replicate aggregates: { [runId]: { metrics: { [name]: {days, mean, ...} } } }
+  const [runReplicateData, setRunReplicateData] = useState({});
+
   const { selectedTimePoint } = useSelector(state => state.time);
   const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
   const layers = useSelector(state => state.layers);
+  const viewRunIds = useSelector(state => state.runs.viewRunIds);
+  const availableRuns = useSelector(state => state.runs.availableRuns);
 
   const fetchAverageData = useCallback(async () => {
     setIsLoading(true);
@@ -64,6 +70,62 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       setBeePopulationData(null);
     }
   }, []);
+
+  // Per-run replicate fetch: pull /api/bee-population/replicates for each viewRunId.
+  // Cached in `runReplicateData` keyed by runId so flipping a chip on/off doesn't refetch.
+  useEffect(() => {
+    if (!viewRunIds || viewRunIds.length === 0) return;
+    const missing = viewRunIds.filter(id => !runReplicateData[id]);
+    if (missing.length === 0) return;
+    const controller = new AbortController();
+    Promise.all(
+      missing.map(id =>
+        fetch(buildApiUrl(`/api/bee-population/replicates?run_id=${id}`), {
+          signal: controller.signal,
+        })
+          .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status} for run ${id}`);
+            return r.json();
+          })
+          .then(json => ({ id, json }))
+      )
+    )
+      .then(results => {
+        setRunReplicateData(prev => {
+          const next = { ...prev };
+          for (const { id, json } of results) next[id] = json;
+          return next;
+        });
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching per-run replicate data:', err);
+        }
+      });
+    return () => controller.abort();
+  }, [viewRunIds, runReplicateData]);
+
+  // Build a `lines` array (TrellisTimeSeriesChart multi-line format) from per-run
+  // replicate data for one metric. One line per selected run, mean across replicates.
+  const getMultiRunLines = useCallback((metricName) => {
+    if (!viewRunIds || viewRunIds.length === 0) return null;
+    const lines = [];
+    viewRunIds.forEach((runId, idx) => {
+      const runData = runReplicateData[runId];
+      const metric = runData?.metrics?.[metricName];
+      if (!metric || !metric.days || !metric.mean) return;
+      const data = metric.days.map((day, i) => ({ day, value: metric.mean[i] ?? 0 }));
+      const run = availableRuns.find(r => r.id === runId);
+      const label = run ? (run.label || run.sim_id) : `run ${runId}`;
+      lines.push({
+        data,
+        dataKey: 'value',
+        color: RUN_COLOR_PALETTE[idx % RUN_COLOR_PALETTE.length],
+        label,
+      });
+    });
+    return lines.length > 0 ? lines : null;
+  }, [viewRunIds, runReplicateData, availableRuns]);
 
   const fetchApplicationsData = useCallback(async () => {
     try {
@@ -217,6 +279,24 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         </div>
       )}
       
+      {/* Per-run banner for tabs that don't yet support per-run scoping */}
+      {viewRunIds.length > 0 &&
+        (activeTab === 'nectar-pollen' || activeTab === 'exposure') && (
+          <div
+            style={{
+              background: '#fef3c7',
+              border: '1px solid #fcd34d',
+              borderRadius: 4,
+              padding: '6px 10px',
+              fontSize: 12,
+              color: '#92400e',
+              marginBottom: 10,
+            }}
+          >
+            Per-run forage and exposure data is not yet supported. Showing default scenario data.
+          </div>
+        )}
+
       {/* Nectar & Pollen Charts using Trellis Layout */}
       {activeTab === 'nectar-pollen' && (
         <div className="mb-6">
@@ -262,73 +342,89 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       {activeTab === 'bee-population' && (
         <div className="mb-6">
           {(() => {
-            const seriesData = [];
-            
-            if (layers.TotalColony?.visible) {
-              seriesData.push({
-                data: getBeeChartData('TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae'),
-                dataKey: "TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae",
-                title: "Total Colony Size",
-                color: "#1b9e77",
-                yAxisLabel: "Total Population"
-              });
+            if (!viewRunIds || viewRunIds.length === 0) {
+              return (
+                <div className="text-center py-8 text-gray-500">
+                  Select one or more runs in the header to view colony metrics.
+                </div>
+              );
             }
-            
-            if (layers.TotalAdults?.visible) {
-              seriesData.push({
-                data: getBeeChartData('TotalIHbees + TotalForagers'),
-                dataKey: "TotalIHbees + TotalForagers",
-                title: "Adults (Workers)",
-                color: "#d95f02",
-                yAxisLabel: "Number of Adult Bees"
-              });
+            const buildSeries = (layerKey, metric, title, color, yAxisLabel) => {
+              if (!layers[layerKey]?.visible) return null;
+              const lines = getMultiRunLines(metric);
+              if (!lines) return null;
+              return { title, color, yAxisLabel, lines };
+            };
+
+            const seriesData = [
+              buildSeries(
+                'TotalColony',
+                'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae',
+                'Total Colony Size',
+                '#1b9e77',
+                'Total Population'
+              ),
+              buildSeries(
+                'TotalAdults',
+                'TotalIHbees + TotalForagers',
+                'Adults (Workers)',
+                '#d95f02',
+                'Number of Adult Bees'
+              ),
+              buildSeries(
+                'AllEggs',
+                'TotalDroneEggs + TotalEggs',
+                'All Eggs',
+                '#7570b3',
+                'Number of Eggs'
+              ),
+              buildSeries(
+                'AllLarvae',
+                'TotalDroneLarvae + TotalLarvae',
+                'All Larvae',
+                '#e7298a',
+                'Number of Larvae'
+              ),
+              buildSeries(
+                'AllPupae',
+                'TotalDronePupae + TotalPupae',
+                'All Pupae',
+                '#66a61e',
+                'Number of Pupae'
+              ),
+            ].filter(Boolean);
+
+            if (seriesData.length === 0) {
+              return (
+                <div className="text-center py-8 text-gray-500">
+                  Loading per-run replicate data… make sure colony layers are visible in the sidebar.
+                </div>
+              );
             }
-            
-            if (layers.AllEggs?.visible) {
-              seriesData.push({
-                data: getBeeChartData('TotalDroneEggs + TotalEggs'),
-                dataKey: "TotalDroneEggs + TotalEggs",
-                title: "All Eggs",
-                color: "#7570b3",
-                yAxisLabel: "Number of Eggs"
-              });
-            }
-            
-            if (layers.AllLarvae?.visible) {
-              seriesData.push({
-                data: getBeeChartData('TotalDroneLarvae + TotalLarvae'),
-                dataKey: "TotalDroneLarvae + TotalLarvae",
-                title: "All Larvae",
-                color: "#e7298a",
-                yAxisLabel: "Number of Larvae"
-              });
-            }
-            
-            if (layers.AllPupae?.visible) {
-              seriesData.push({
-                data: getBeeChartData('TotalDronePupae + TotalPupae'),
-                dataKey: "TotalDronePupae + TotalPupae",
-                title: "All Pupae",
-                color: "#66a61e",
-                yAxisLabel: "Number of Pupae"
-              });
-            }
-            
-            return seriesData.length > 0 ? (
-              <TrellisTimeSeriesChart
-                seriesData={seriesData}
-                applicationData={applicationsData}
-                height={500}
-              />
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No bee population layers visible. Enable layers in the controls.
-              </div>
+            return (
+              <>
+                <div className="text-xs text-gray-600 mb-2">
+                  Showing replicate-mean lines for {viewRunIds.length} selected run
+                  {viewRunIds.length === 1 ? '' : 's'}.
+                </div>
+                <TrellisTimeSeriesChart
+                  seriesData={seriesData}
+                  applicationData={[]}
+                  height={500}
+                />
+              </>
             );
           })()}
         </div>
       )}
       
+      {/* Compare runs (treated vs untreated relative change + threshold exceedance) */}
+      {activeTab === 'compare' && (
+        <div className="mb-6">
+          <CompareChart />
+        </div>
+      )}
+
       {/* Exposure Charts using Trellis Layout */}
       {activeTab === 'exposure' && (
         <div className="mb-6">

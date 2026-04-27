@@ -61,6 +61,32 @@ function Map() {
   const layerVisibility = useSelector(state => state.layers);
   const { selectedTimePoint } = useSelector(state => state.time);
   const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
+  const { availableRuns, baselineRunId, scenarioRunId } = useSelector(state => state.runs);
+
+  // Build hive markers for the currently selected baseline / scenario runs.
+  // We render these alongside the legacy beehive marker so they are visible even
+  // when the legacy Beehive layer is hidden — they convey "which run's hive".
+  const selectedRunHives = useMemo(() => {
+    const markers = [];
+    const findRun = (id) => availableRuns.find(r => r.id === id);
+    const baseline = baselineRunId != null ? findRun(baselineRunId) : null;
+    const scenario = scenarioRunId != null ? findRun(scenarioRunId) : null;
+    if (baseline && baseline.hive_lon != null && baseline.hive_lat != null) {
+      markers.push({
+        coordinates: [baseline.hive_lon, baseline.hive_lat],
+        role: 'baseline',
+        run: baseline,
+      });
+    }
+    if (scenario && scenario.hive_lon != null && scenario.hive_lat != null) {
+      markers.push({
+        coordinates: [scenario.hive_lon, scenario.hive_lat],
+        role: 'scenario',
+        run: scenario,
+      });
+    }
+    return markers;
+  }, [availableRuns, baselineRunId, scenarioRunId]);
 
   // Debounced viewport data loading with longer delay for zoom changes
   const debouncedLoadViewportData = useCallback(
@@ -658,7 +684,7 @@ function Map() {
       });
     })(), // Close the IIFE
     // Beehive location layer
-    layerVisibility.Beehive?.visible && 
+    layerVisibility.Beehive?.visible &&
     beehiveLocation &&
       new ScatterplotLayer({
         id: 'beehive-layer',
@@ -680,6 +706,27 @@ function Map() {
           getFillColor: [beehiveLocation],
           getPosition: [beehiveLocation]
         }
+      }),
+    // Selected-runs hive markers (baseline = blue, scenario = red).
+    // Always rendered when runs are selected, independent of the legacy Beehive layer toggle.
+    selectedRunHives.length > 0 &&
+      new ScatterplotLayer({
+        id: 'selected-runs-hive-layer',
+        data: selectedRunHives,
+        getPosition: d => d.coordinates,
+        getRadius: 250,
+        getFillColor: d => d.role === 'baseline' ? [37, 99, 235, 220] : [220, 38, 38, 220],
+        getLineColor: d => d.role === 'baseline' ? [29, 78, 216, 255] : [185, 28, 28, 255],
+        getLineWidth: 4,
+        stroked: true,
+        filled: true,
+        radiusUnits: 'meters',
+        pickable: true,
+        autoHighlight: true,
+        updateTriggers: {
+          getFillColor: [selectedRunHives],
+          getPosition: [selectedRunHives],
+        },
       })
   ].filter(Boolean);
 
