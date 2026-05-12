@@ -1,0 +1,91 @@
+.view-runs-picker {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.view-runs-label {
+  font-weight: 500;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.view-runs-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex: 1;
+  align-items: flex-start;
+}
+
+.view-runs-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 0;
+}
+
+.group-runs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.view-run-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 12px;
+  background: #fff;
+  color: #4b5563;
+  cursor: pointer;
+  transition: border-color 120ms, background-color 120ms;
+}
+
+.view-run-chip:hover {
+  background: #f3f4f6;
+}
+
+.view-run-chip.on {
+  background: #fff;
+  font-weight: 600;
+}
+
+.view-run-chip .chip-tag {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 8px;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.view-run-chip.on .chip-tag {
+  background: currentColor;
+  color: #fff;
+}
+
+.view-runs-clear {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}

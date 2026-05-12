@@ -1,0 +1,34 @@
+site_name: BeeView User Guide
+site_description: Interactive visualization of xPollinator simulation results
+theme:
+  name: material
+  palette:
+    primary: amber
+    accent: orange
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.tabs.link
+
+nav:
+  - Home: index.md
+  - Map & Layers: map-layers.md
+  - Charts:
+    - Nectar & Pollen: charts-nectar-pollen.md
+    - Bee Population: charts-bee-population.md
+    - Exposure: charts-exposure.md
+    - Compare Runs: charts-compare.md
+  - Sidebar & Histograms: sidebar.md
+  - Run Selection: run-selection.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - attr_list
+  - md_in_html
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.superfences
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js

@@ -58,6 +58,12 @@ function App() {
                 >
                   Exposure
                 </button>
+                <button
+                  className={`tab-button ${activeChartTab === 'compare' ? 'active' : ''}`}
+                  onClick={() => setActiveChartTab('compare')}
+                >
+                  Compare runs
+                </button>
               </div>
               
               {/* Chart Content - Always show TimeSeriesChart but filter based on active tab */}

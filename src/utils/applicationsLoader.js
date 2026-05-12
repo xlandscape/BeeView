@@ -3,17 +3,24 @@ import { buildApiUrl } from '../config/api';
 /**
  * Load applications data for plant protection products
  * @param {Array} selectedFeatureIds - Optional array of feature IDs to filter by
+ * @param {number|null} runId - Optional run ID to resolve run-scoped applications
  * @returns {Promise<Array>} Array of application objects
  */
-export const loadApplicationsData = async (selectedFeatureIds = []) => {
+export const loadApplicationsData = async (selectedFeatureIds = [], runId = null) => {
   try {
-    let url = buildApiUrl('/api/applications');
+    const params = new URLSearchParams();
     
-    // If features are selected, add them to the query
+    if (runId != null) {
+      params.set('run_id', String(runId));
+    }
+
     if (selectedFeatureIds.length > 0) {
       const featureIdsStr = selectedFeatureIds.join(',');
-      url += `?feature_ids=${featureIdsStr}`;
+      params.set('feature_ids', featureIdsStr);
     }
+
+    const query = params.toString();
+    const url = buildApiUrl(query ? `/api/applications?${query}` : '/api/applications');
     
     console.log('🌐 applicationsLoader: Fetching from URL:', url);
     const response = await fetch(url);
