@@ -33,6 +33,14 @@ const INITIAL_VIEW_STATE = {
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
+function getHiveMarkerRadiusPixels(zoom) {
+  if (zoom >= 14) return 18;
+  if (zoom >= 12) return 15;
+  if (zoom >= 10) return 12;
+  if (zoom >= 8) return 10;
+  return 8;
+}
+
 function DeckGLOverlay(props) {
   const overlay = useControl(() => new DeckOverlay(props));
   overlay.setProps(props);
@@ -56,12 +64,13 @@ function Map() {
   const [vegetationMapping, setVegetationMapping] = useState(null);
   const [applicationsData, setApplicationsData] = useState([]);
   const [debugMode, setDebugMode] = useState(false); // 🐛 Debug mode toggle
+  const hiveMarkerRadius = useMemo(() => getHiveMarkerRadiusPixels(viewState.zoom), [viewState.zoom]);
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
   const layerVisibility = useSelector(state => state.layers);
   const { selectedTimePoint } = useSelector(state => state.time);
   const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
-  const { availableRuns, baselineRunId, scenarioRunId } = useSelector(state => state.runs);
+  const { availableRuns, baselineRunId, scenarioRunId, viewRunIds } = useSelector(state => state.runs);
 
   // Build hive markers for the currently selected baseline / scenario runs.
   // We render these alongside the legacy beehive marker so they are visible even
@@ -87,6 +96,19 @@ function Map() {
     }
     return markers;
   }, [availableRuns, baselineRunId, scenarioRunId]);
+
+  // Hive markers for all view-selected runs, shown when the Beehive layer is toggled on.
+  const viewRunHives = useMemo(() => {
+    if (!layerVisibility.Beehive?.visible) return [];
+    return viewRunIds
+      .map(id => availableRuns.find(r => r.id === id))
+      .filter(r => r && r.hive_lon != null && r.hive_lat != null)
+      .map(r => ({
+        coordinates: [r.hive_lon, r.hive_lat],
+        role: r.treatment_on ? 'treated' : 'untreated',
+        run: r,
+      }));
+  }, [availableRuns, viewRunIds, layerVisibility.Beehive?.visible]);
 
   // Debounced viewport data loading with longer delay for zoom changes
   const debouncedLoadViewportData = useCallback(
@@ -167,11 +189,10 @@ function Map() {
           const location = await response.json();
           setBeehiveLocation(location);
           console.log('Beehive location loaded:', location);
-        } else {
-          console.warn('Beehive location not found');
         }
+        // 404/500 means no template.xrun is available; per-run markers cover this case.
       } catch (error) {
-        console.error('Error loading beehive location:', error);
+        console.warn('Beehive location unavailable:', error.message);
       }
     };
     
@@ -690,21 +711,23 @@ function Map() {
         id: 'beehive-layer',
         data: [{
           coordinates: [beehiveLocation.x, beehiveLocation.y],
-          radius: 200 // 200 meter radius circle
+          radius: hiveMarkerRadius
         }],
         getPosition: d => d.coordinates,
         getRadius: d => d.radius,
         getFillColor: [255, 165, 0, 200], // Orange color with transparency
-        getLineColor: [255, 140, 0, 255], // Darker orange outline
-        getLineWidth: 3,
+        getLineColor: [255, 255, 255, 255],
+        getLineWidth: 2,
         stroked: true,
         filled: true,
-        radiusUnits: 'meters',
+        radiusUnits: 'pixels',
+        lineWidthUnits: 'pixels',
         pickable: true,
         autoHighlight: true,
         updateTriggers: {
           getFillColor: [beehiveLocation],
-          getPosition: [beehiveLocation]
+          getPosition: [beehiveLocation],
+          getRadius: [hiveMarkerRadius]
         }
       }),
     // Selected-runs hive markers (baseline = blue, scenario = red).
@@ -714,18 +737,43 @@ function Map() {
         id: 'selected-runs-hive-layer',
         data: selectedRunHives,
         getPosition: d => d.coordinates,
-        getRadius: 250,
+        getRadius: hiveMarkerRadius,
         getFillColor: d => d.role === 'baseline' ? [37, 99, 235, 220] : [220, 38, 38, 220],
-        getLineColor: d => d.role === 'baseline' ? [29, 78, 216, 255] : [185, 28, 28, 255],
-        getLineWidth: 4,
+        getLineColor: [255, 255, 255, 255],
+        getLineWidth: 2,
         stroked: true,
         filled: true,
-        radiusUnits: 'meters',
+        radiusUnits: 'pixels',
+        lineWidthUnits: 'pixels',
         pickable: true,
         autoHighlight: true,
         updateTriggers: {
           getFillColor: [selectedRunHives],
           getPosition: [selectedRunHives],
+          getRadius: [hiveMarkerRadius],
+        },
+      }),
+    // View-run hive markers: shown for all runs selected in the ViewRunsPicker when
+    // the Beehive Location layer is enabled. Treated = orange, untreated = teal.
+    viewRunHives.length > 0 &&
+      new ScatterplotLayer({
+        id: 'view-runs-hive-layer',
+        data: viewRunHives,
+        getPosition: d => d.coordinates,
+        getRadius: hiveMarkerRadius,
+        getFillColor: d => d.role === 'treated' ? [234, 88, 12, 220] : [13, 148, 136, 220],
+        getLineColor: [255, 255, 255, 255],
+        getLineWidth: 2,
+        stroked: true,
+        filled: true,
+        radiusUnits: 'pixels',
+        lineWidthUnits: 'pixels',
+        pickable: true,
+        autoHighlight: true,
+        updateTriggers: {
+          getFillColor: [viewRunHives],
+          getPosition: [viewRunHives],
+          getRadius: [hiveMarkerRadius],
         },
       })
   ].filter(Boolean);

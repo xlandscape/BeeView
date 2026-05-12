@@ -1,7 +1,7 @@
 .view-runs-picker {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 12px;
   flex-wrap: wrap;
   margin-top: 4px;
   font-size: 12px;
@@ -11,6 +11,36 @@
 .view-runs-label {
   font-weight: 500;
   margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.view-runs-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex: 1;
+  align-items: flex-start;
+}
+
+.view-runs-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 0;
+}
+
+.group-runs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .view-run-chip {

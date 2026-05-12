@@ -3,20 +3,53 @@ import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedTimePoint, setAvailableTimePoints } from '../../store/timeSlice';
 import { clearSelection } from '../../store/reducers/selectionReducer';
 import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
-import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
 import { RUN_COLOR_PALETTE } from '../../store/slices/runsSlice';
+import {
+  buildExposureRequestKey,
+  fetchApplications,
+  fetchExposureTimeseries,
+} from '../../store/thunks/exposureThunks';
 import TrellisTimeSeriesChart from '../TrellisTimeSeriesChart';
 import CompareChart from '../CompareChart';
+
+const DERIVED_BEE_METRICS = {
+  'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae': [
+    'TotalIHbees',
+    'TotalForagers',
+    'TotalDroneEggs',
+    'TotalEggs',
+    'TotalDroneLarvae',
+    'TotalLarvae',
+    'TotalDronePupae',
+    'TotalPupae',
+  ],
+  'TotalIHbees + TotalForagers': ['TotalIHbees', 'TotalForagers'],
+  'TotalDroneEggs + TotalEggs': ['TotalDroneEggs', 'TotalEggs'],
+  'TotalDroneLarvae + TotalLarvae': ['TotalDroneLarvae', 'TotalLarvae'],
+  'TotalDronePupae + TotalPupae': ['TotalDronePupae', 'TotalPupae'],
+};
+
+function valueForBeeMetric(dayData, metricKey) {
+  if (typeof dayData?.[metricKey] === 'number') {
+    return dayData[metricKey];
+  }
+
+  const formula = DERIVED_BEE_METRICS[metricKey];
+  if (!formula) return 0;
+
+  const hasAllInputs = formula.every((name) => typeof dayData?.[name] === 'number');
+  if (!hasAllInputs) return 0;
+  return formula.reduce((sum, name) => sum + dayData[name], 0);
+}
 
 const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const dispatch = useDispatch();
   const [averageData, setAverageData] = useState([]);
   const [beePopulationData, setBeePopulationData] = useState(null);
-  const [applicationsData, setApplicationsData] = useState([]);
-  const [exposureData, setExposureData] = useState([]);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [beeLineScope, setBeeLineScope] = useState('mc');
   // Per-run replicate aggregates: { [runId]: { metrics: { [name]: {days, mean, ...} } } }
   const [runReplicateData, setRunReplicateData] = useState({});
 
@@ -25,6 +58,13 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const layers = useSelector(state => state.layers);
   const viewRunIds = useSelector(state => state.runs.viewRunIds);
   const availableRuns = useSelector(state => state.runs.availableRuns);
+  const exposureRequests = useSelector(state => state.exposure.requests);
+  const dayCount = Math.max(
+    averageData?.length || 0,
+    beePopulationData?.timeseries?.length || 0,
+    365,
+  );
+  const effectiveRunIds = viewRunIds.length > 0 ? viewRunIds : [null];
 
   const fetchAverageData = useCallback(async () => {
     setIsLoading(true);
@@ -49,8 +89,9 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       const data = await response.json();
       setAverageData(data.averages || []);
       
-      // Set available time points (1-365)
-      const timePoints = Array.from({ length: 365 }, (_, i) => i + 1);
+      // Set available time points using the current data horizon.
+      const inferredDays = Math.max(data?.averages?.length || 0, 365);
+      const timePoints = Array.from({ length: inferredDays }, (_, i) => i + 1);
       dispatch(setAvailableTimePoints(timePoints));
       
     } catch (err) {
@@ -127,44 +168,115 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     return lines.length > 0 ? lines : null;
   }, [viewRunIds, runReplicateData, availableRuns]);
 
-  const fetchApplicationsData = useCallback(async () => {
-    try {
-      console.log('🚀 TimeSeriesChart: Loading applications data for features:', selectedFeatureIds);
-      const data = await loadApplicationsData(selectedFeatureIds);
-      console.log('✅ TimeSeriesChart: Received applications data:', data);
-      setApplicationsData(data);
-    } catch (err) {
-      console.error('❌ TimeSeriesChart: Error fetching applications data:', err);
-      setApplicationsData([]);
-    }
-  }, [selectedFeatureIds]);
+  // Aggregate MC runs first, then draw one line per hive group.
+  const getHiveMeanLines = useCallback((metricName) => {
+    if (!viewRunIds || viewRunIds.length === 0) return null;
 
-  const fetchExposureData = useCallback(async () => {
-    try {
-      console.log('🚀 TimeSeriesChart: Loading exposure data for features:', selectedFeatureIds);
-      
-      let url = buildApiUrl('/api/exposure/timeseries');
-      
-      // If features are selected, add them to the query
-      if (selectedFeatureIds.length > 0) {
-        const featureIdsStr = selectedFeatureIds.join(',');
-        url += `?feature_ids=${featureIdsStr}`;
+    const grouped = new Map();
+    viewRunIds.forEach((runId) => {
+      const run = availableRuns.find((r) => r.id === runId);
+      const metric = runReplicateData[runId]?.metrics?.[metricName];
+      if (!metric || !metric.days || !metric.mean) return;
+
+      // Keep treated/untreated separate when averaging MC runs.
+      const hiveKey = run?.batch_sim_id || run?.hive_group_id || run?.sim_id || `run ${runId}`;
+      if (!grouped.has(hiveKey)) grouped.set(hiveKey, []);
+      grouped.get(hiveKey).push({
+        days: metric.days,
+        mean: metric.mean,
+      });
+    });
+
+    const lines = [];
+    Array.from(grouped.entries()).forEach(([hiveKey, seriesList], idx) => {
+      if (!seriesList || seriesList.length === 0) return;
+
+      const n = Math.min(...seriesList.map((s) => Math.min(s.days.length, s.mean.length)));
+      if (!Number.isFinite(n) || n <= 0) return;
+
+      const data = [];
+      for (let i = 0; i < n; i += 1) {
+        let sum = 0;
+        let count = 0;
+        seriesList.forEach((s) => {
+          const v = s.mean[i];
+          if (Number.isFinite(v)) {
+            sum += v;
+            count += 1;
+          }
+        });
+        data.push({
+          day: seriesList[0].days[i] ?? (i + 1),
+          value: count > 0 ? (sum / count) : 0,
+        });
       }
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log('✅ TimeSeriesChart: Received exposure data:', data);
-      setExposureData(data.exposure_timeseries || []);
-    } catch (err) {
-      console.error('❌ TimeSeriesChart: Error fetching exposure data:', err);
-      setExposureData([]);
-    }
-  }, [selectedFeatureIds]);
+
+      lines.push({
+        data,
+        dataKey: 'value',
+        color: RUN_COLOR_PALETTE[idx % RUN_COLOR_PALETTE.length],
+        label: seriesList.length > 1 ? `${hiveKey} (${seriesList.length} MC)` : `${hiveKey}`,
+      });
+    });
+
+    return lines.length > 0 ? lines : null;
+  }, [viewRunIds, runReplicateData, availableRuns]);
+
+  const getRunLabel = useCallback((runId) => {
+    if (runId == null) return 'Default scenario';
+    const run = availableRuns.find(item => item.id === runId);
+    return run ? (run.label || run.sim_id) : `run ${runId}`;
+  }, [availableRuns]);
+
+  const getExposureRequest = useCallback((runId) => {
+    const requestKey = buildExposureRequestKey(runId, selectedFeatureIds);
+    return exposureRequests[requestKey] || null;
+  }, [exposureRequests, selectedFeatureIds]);
+
+  const getExposureLines = useCallback((metricName) => {
+    const lines = effectiveRunIds
+      .map((runId, idx) => {
+        const request = getExposureRequest(runId);
+        const data = request?.exposureTimeseries || [];
+        if (data.length === 0) return null;
+        return {
+          data,
+          dataKey: metricName,
+          color: RUN_COLOR_PALETTE[idx % RUN_COLOR_PALETTE.length],
+          label: getRunLabel(runId),
+        };
+      })
+      .filter(Boolean);
+
+    return lines.length > 0 ? lines : null;
+  }, [effectiveRunIds, getExposureRequest, getRunLabel]);
+
+  const getApplicationTimelineData = useCallback(() => {
+    return effectiveRunIds.flatMap((runId, idx) => {
+      const request = getExposureRequest(runId);
+      const applications = request?.applications || [];
+      const color = RUN_COLOR_PALETTE[idx % RUN_COLOR_PALETTE.length];
+      const runLabel = getRunLabel(runId);
+      return applications.map((application) => ({
+        ...application,
+        run_id: runId,
+        run_label: runLabel,
+        color,
+      }));
+    });
+  }, [effectiveRunIds, getExposureRequest, getRunLabel]);
+
+  const applicationTimelineData = getApplicationTimelineData();
+  const exposureRequestEntries = effectiveRunIds.map(runId => ({
+    runId,
+    request: getExposureRequest(runId),
+  }));
+  const exposureRequestError = exposureRequestEntries
+    .map(({ request }) => request?.exposureError || request?.applicationsError)
+    .find(Boolean);
+  const isExposureLoading = exposureRequestEntries.some(({ request }) =>
+    request?.exposureStatus === 'loading' || request?.applicationsStatus === 'loading'
+  );
 
   // Transform bee population data to chart format
   const getBeeChartData = (metricKey) => {
@@ -175,7 +287,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     // The API returns: {"timeseries": [{"day": 1, "totalEggs": 123, ...}, ...]}
     // Transform to chart format: [{day: 1, totalEggs: 123}, ...]
     return beePopulationData.timeseries.map(dayData => {
-      let value = dayData[metricKey] || 0;
+      let value = valueForBeeMetric(dayData, metricKey);
       
       return {
         day: dayData.day,
@@ -187,9 +299,28 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   useEffect(() => {
     fetchAverageData();
     fetchBeePopulationData();
-    fetchApplicationsData();
-    fetchExposureData();
-  }, [fetchAverageData, fetchBeePopulationData, fetchApplicationsData, fetchExposureData]);
+  }, [fetchAverageData, fetchBeePopulationData]);
+
+  useEffect(() => {
+    if (activeTab !== 'nectar-pollen' && activeTab !== 'exposure') {
+      return;
+    }
+
+    effectiveRunIds.forEach((runId) => {
+      const request = getExposureRequest(runId);
+      if (request?.applicationsStatus !== 'loading' && request?.applicationsStatus !== 'succeeded') {
+        dispatch(fetchApplications({ runId, featureIds: selectedFeatureIds }));
+      }
+
+      if (
+        activeTab === 'exposure' &&
+        request?.exposureStatus !== 'loading' &&
+        request?.exposureStatus !== 'succeeded'
+      ) {
+        dispatch(fetchExposureTimeseries({ runId, featureIds: selectedFeatureIds }));
+      }
+    });
+  }, [activeTab, dispatch, effectiveRunIds, getExposureRequest, selectedFeatureIds]);
 
   // Add keyboard navigation
   useEffect(() => {
@@ -203,7 +334,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
           break;
         case 'ArrowRight':
           event.preventDefault();
-          dispatch(setSelectedTimePoint(Math.min(365, selectedTimePoint + 1)));
+          dispatch(setSelectedTimePoint(Math.min(dayCount, selectedTimePoint + 1)));
           break;
         case 'Home':
           event.preventDefault();
@@ -211,7 +342,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
           break;
         case 'End':
           event.preventDefault();
-          dispatch(setSelectedTimePoint(365));
+          dispatch(setSelectedTimePoint(dayCount));
           break;
         default:
           break;
@@ -223,7 +354,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedTimePoint, dispatch]);
+  }, [selectedTimePoint, dayCount, dispatch]);
 
   if (isLoading) {
     return <div className="timeseries-container">Loading time series data...</div>;
@@ -279,21 +410,19 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         </div>
       )}
       
-      {/* Per-run banner for tabs that don't yet support per-run scoping */}
-      {viewRunIds.length > 0 &&
-        (activeTab === 'nectar-pollen' || activeTab === 'exposure') && (
+      {viewRunIds.length > 0 && activeTab === 'nectar-pollen' && (
           <div
             style={{
-              background: '#fef3c7',
-              border: '1px solid #fcd34d',
+              background: '#eff6ff',
+              border: '1px solid #93c5fd',
               borderRadius: 4,
               padding: '6px 10px',
               fontSize: 12,
-              color: '#92400e',
+              color: '#1d4ed8',
               marginBottom: 10,
             }}
           >
-            Per-run forage and exposure data is not yet supported. Showing default scenario data.
+            Nectar and pollen are shared across runs for this scenario. The application timeline below follows the selected run set.
           </div>
         )}
 
@@ -307,9 +436,9 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
               seriesData.push({
                 data: averageData,
                 dataKey: "nectar_avg",
-                title: "Nectar Concentration",
+                title: "Total Nectar Availability",
                 color: "#2563eb",
-                yAxisLabel: "Nectar Concentration"
+                yAxisLabel: "Total Nectar Availability"
               });
             }
             
@@ -317,16 +446,16 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
               seriesData.push({
                 data: averageData,
                 dataKey: "pollen_avg",
-                title: "Pollen Concentration", 
+                title: "Total Pollen Availability",
                 color: "#dc2626",
-                yAxisLabel: "Pollen Concentration"
+                yAxisLabel: "Total Pollen Availability"
               });
             }
             
             return seriesData.length > 0 ? (
               <TrellisTimeSeriesChart
                 seriesData={seriesData}
-                applicationData={applicationsData}
+                applicationData={applicationTimelineData}
                 height={400}
               />
             ) : (
@@ -341,6 +470,35 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       {/* Bee Population Charts using Trellis Layout */}
       {activeTab === 'bee-population' && (
         <div className="mb-6">
+          {viewRunIds.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 10,
+                fontSize: 12,
+                color: '#374151',
+              }}
+            >
+              <label htmlFor="bee-line-scope" style={{ fontWeight: 600 }}>Display:</label>
+              <select
+                id="bee-line-scope"
+                value={beeLineScope}
+                onChange={(e) => setBeeLineScope(e.target.value)}
+                style={{
+                  border: '1px solid #d1d5db',
+                  borderRadius: 4,
+                  padding: '4px 8px',
+                  background: '#fff',
+                  color: '#111827',
+                }}
+              >
+                <option value="mc">Individual MC runs</option>
+                <option value="hive_mean">Average MC runs per hive</option>
+              </select>
+            </div>
+          )}
           {(() => {
             if (!viewRunIds || viewRunIds.length === 0) {
               return (
@@ -351,7 +509,9 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
             }
             const buildSeries = (layerKey, metric, title, color, yAxisLabel) => {
               if (!layers[layerKey]?.visible) return null;
-              const lines = getMultiRunLines(metric);
+              const lines = beeLineScope === 'hive_mean'
+                ? getHiveMeanLines(metric)
+                : getMultiRunLines(metric);
               if (!lines) return null;
               return { title, color, yAxisLabel, lines };
             };
@@ -404,13 +564,15 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
             return (
               <>
                 <div className="text-xs text-gray-600 mb-2">
-                  Showing replicate-mean lines for {viewRunIds.length} selected run
-                  {viewRunIds.length === 1 ? '' : 's'}.
+                  {beeLineScope === 'hive_mean'
+                    ? `Showing MC-averaged lines per hive from ${viewRunIds.length} selected run${viewRunIds.length === 1 ? '' : 's'}.`
+                    : `Showing replicate-mean lines for ${viewRunIds.length} selected run${viewRunIds.length === 1 ? '' : 's'}.`}
                 </div>
                 <TrellisTimeSeriesChart
                   seriesData={seriesData}
                   applicationData={[]}
                   height={500}
+                  startDate={availableRuns.find(r => r.id === viewRunIds[0])?.sim_start || null}
                 />
               </>
             );
@@ -429,34 +591,50 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       {activeTab === 'exposure' && (
         <div className="mb-6">
           {(() => {
+            const nectarLines = getExposureLines('nectar_exposure');
+            const pollenLines = getExposureLines('pollen_exposure');
+            const contactLines = getExposureLines('contact_exposure');
             const seriesData = [
               {
-                data: exposureData,
-                dataKey: "nectar_exposure",
+                lines: nectarLines,
                 title: "Nectar Exposure",
                 color: "#2563eb",
                 yAxisLabel: "Nectar Exposure"
               },
               {
-                data: exposureData,
-                dataKey: "pollen_exposure",
+                lines: pollenLines,
                 title: "Pollen Exposure", 
                 color: "#dc2626",
                 yAxisLabel: "Pollen Exposure"
               },
               {
-                data: exposureData,
-                dataKey: "contact_exposure",
+                lines: contactLines,
                 title: "Contact Exposure",
                 color: "#059669",
                 yAxisLabel: "Contact Exposure"
               }
-            ];
+            ].filter(series => series.lines && series.lines.length > 0);
             
-            return exposureData.length > 0 ? (
+            if (isExposureLoading && seriesData.length === 0) {
+              return (
+                <div className="text-center py-8 text-gray-500">
+                  Loading run-specific exposure data...
+                </div>
+              );
+            }
+
+            if (exposureRequestError && seriesData.length === 0) {
+              return (
+                <div className="text-center py-8 text-red-600">
+                  {exposureRequestError}
+                </div>
+              );
+            }
+
+            return seriesData.length > 0 ? (
               <TrellisTimeSeriesChart
                 seriesData={seriesData}
-                applicationData={applicationsData}
+                applicationData={applicationTimelineData}
                 height={500}
               />
             ) : (
@@ -468,80 +646,6 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         </div>
       )}
 
-      {/* Time Point Slider */}
-      <div className="time-slider-container mt-4 px-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Select Day of Year: {selectedTimePoint || 1}
-        </label>
-        <div className="flex items-center space-x-3">
-          <span className="text-xs text-gray-500">1</span>
-          <input
-            type="range"
-            min="1"
-            max="365"
-            value={selectedTimePoint || 1}
-            onChange={(e) => dispatch(setSelectedTimePoint(parseInt(e.target.value)))}
-            className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-            style={{
-              background: `linear-gradient(to right, #2563eb 0%, #2563eb ${((selectedTimePoint || 1) - 1) / 364 * 100}%, #e5e7eb ${((selectedTimePoint || 1) - 1) / 364 * 100}%, #e5e7eb 100%)`
-            }}
-          />
-          <span className="text-xs text-gray-500">365</span>
-        </div>
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>Jan</span>
-          <span>Feb</span>
-          <span>Mar</span>
-          <span>Apr</span>
-          <span>May</span>
-          <span>Jun</span>
-          <span>Jul</span>
-          <span>Aug</span>
-          <span>Sep</span>
-          <span>Oct</span>
-          <span>Nov</span>
-          <span>Dec</span>
-        </div>
-      </div>
-      
-      {/* Quick navigation buttons */}
-      <div className="time-controls mt-2 px-4 flex gap-2 flex-wrap">
-        <button
-          onClick={() => dispatch(setSelectedTimePoint(Math.max(1, (selectedTimePoint || 1) - 1)))}
-          className="px-2 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-50"
-          disabled={selectedTimePoint <= 1}
-        >
-          ← Previous
-        </button>
-        <button
-          onClick={() => dispatch(setSelectedTimePoint(Math.min(365, (selectedTimePoint || 1) + 1)))}
-          className="px-2 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-50"
-          disabled={selectedTimePoint >= 365}
-        >
-          Next →
-        </button>
-        <button
-          onClick={() => dispatch(setSelectedTimePoint(91))}
-          className="px-2 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded"
-          title="April 1st - Spring Start"
-        >
-          Spring
-        </button>
-        <button
-          onClick={() => dispatch(setSelectedTimePoint(182))}
-          className="px-2 py-1 text-sm bg-green-100 hover:bg-green-200 text-green-700 rounded"
-          title="July 1st - Summer Peak"
-        >
-          Summer
-        </button>
-        <button
-          onClick={() => dispatch(setSelectedTimePoint(274))}
-          className="px-2 py-1 text-sm bg-orange-100 hover:bg-orange-200 text-orange-700 rounded"
-          title="October 1st - Fall Start"
-        >
-          Fall
-        </button>
-      </div>
     </div>
   );
 };

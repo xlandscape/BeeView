@@ -6,7 +6,8 @@ import { setSelectedTimePoint } from '../../store/timeSlice';
 const TrellisTimeSeriesChart = ({ 
   seriesData, // Array of {data, dataKey, title, color, yAxisLabel}
   height = 400,
-  applicationData = [] // Application events data
+  applicationData = [], // Application events data
+  startDate = null, // ISO "YYYY-MM-DD" string for calendar axis labels
 }) => {
   const dispatch = useDispatch();
   const svgRef = useRef();
@@ -33,10 +34,64 @@ const TrellisTimeSeriesChart = ({
       .append('g')
       .attr('transform', `translate(${margin.left},${margin.top})`);
 
+    // Derive total days from actual data so multi-year runs aren't clipped.
+    const allDays = seriesData.flatMap(s => {
+      const ls = (s.lines && s.lines.length > 0)
+        ? s.lines
+        : (s.data ? [{ data: s.data }] : []);
+      return ls.flatMap(l => (l.data || []).map(d => d.day || 0));
+    });
+    const totalDays = Math.max(365, ...allDays);
+    const multiYear = totalDays > 366;
+
     // Shared x-scale
     const xScale = d3.scaleLinear()
-      .domain([1, 365])
+      .domain([1, totalDays])
       .range([0, width]);
+
+    // Build x-axis tick descriptors
+    const baseDate = startDate ? new Date(startDate + 'T00:00:00') : null;
+    const dayToDate = (day) => {
+      if (!baseDate) return null;
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() + day - 1);
+      return d;
+    };
+    const buildXTicks = () => {
+      if (!multiYear) {
+        // Single year: month start positions (approx)
+        const MONTH_STARTS = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
+        const MONTH_NAMES  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return MONTH_STARTS.map((day, i) => ({
+          day,
+          label: MONTH_NAMES[i],
+          isYear: false,
+        }));
+      }
+      // Multi-year: year labels at Jan 1 of each year + abbreviated mid-quarter marks
+      const ticks = [];
+      const yearCount = Math.ceil(totalDays / 365) + 1;
+      for (let y = 0; y < yearCount; y++) {
+        const yearStartDay = y * 365 + 1;
+        if (yearStartDay > totalDays + 31) break;
+        const yearLabel = baseDate
+          ? String(baseDate.getFullYear() + y)
+          : `Year ${y + 1}`;
+        ticks.push({ day: yearStartDay, label: yearLabel, isYear: true });
+        // Add quarterly month marks within each year for readability
+        [91, 182, 274].forEach(offset => {
+          const day = yearStartDay + offset - 1;
+          if (day <= totalDays) {
+            const d = dayToDate(day);
+            const mLabel = d
+              ? d.toLocaleString('en', { month: 'short' })
+              : ['Apr','Jul','Oct'][([91,182,274].indexOf(offset))];
+            ticks.push({ day, label: mLabel, isYear: false });
+          }
+        });
+      }
+      return ticks;
+    };
 
     // Create panels for each series
     seriesData.forEach((series, index) => {
@@ -188,35 +243,54 @@ const TrellisTimeSeriesChart = ({
         .on('click', function(event) {
           const [mouseX] = d3.pointer(event);
           const day = Math.round(xScale.invert(mouseX));
-          dispatch(setSelectedTimePoint(Math.max(1, Math.min(365, day))));
+          dispatch(setSelectedTimePoint(Math.max(1, Math.min(totalDays, day))));
         });
     });
 
     // Add shared x-axis at bottom
     const xAxisY = seriesData.length * (panelHeight + 20);
+    const xTicks = buildXTicks();
+
+    // Draw a minimal numeric axis line only
     mainG.append('g')
       .attr('transform', `translate(0, ${xAxisY})`)
-      .call(d3.axisBottom(xScale).tickFormat(d3.format('d')));
+      .call(
+        d3.axisBottom(xScale)
+          .tickValues(xTicks.filter(t => t.isYear || !multiYear).map(t => t.day))
+          .tickFormat(() => '')
+      );
 
     // Add x-axis label
     mainG.append('text')
       .attr('transform', `translate(${width / 2}, ${xAxisY + 40})`)
       .style('text-anchor', 'middle')
       .style('font-size', '12px')
-      .text('Day of Year');
+      .text(multiYear ? 'Simulation Day' : 'Day of Year');
 
-    // Add month labels
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const monthPositions = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
-    
-    months.forEach((month, i) => {
-      mainG.append('text')
-        .attr('x', xScale(monthPositions[i]))
-        .attr('y', xAxisY + 60)
-        .style('text-anchor', 'middle')
-        .style('font-size', '10px')
-        .style('fill', '#999')
-        .text(month);
+    // Draw custom tick labels
+    xTicks.forEach(tick => {
+      const x = xScale(tick.day);
+      if (tick.isYear && multiYear) {
+        // Year separator + bold label
+        mainG.append('line')
+          .attr('x1', x).attr('x2', x)
+          .attr('y1', xAxisY).attr('y2', xAxisY + 14)
+          .attr('stroke', '#666').attr('stroke-width', 1.5);
+        mainG.append('text')
+          .attr('x', x).attr('y', xAxisY + 26)
+          .style('text-anchor', 'middle')
+          .style('font-size', '12px')
+          .style('font-weight', 'bold')
+          .style('fill', '#333')
+          .text(tick.label);
+      } else {
+        mainG.append('text')
+          .attr('x', x).attr('y', xAxisY + (multiYear ? 48 : 60))
+          .style('text-anchor', 'middle')
+          .style('font-size', '10px')
+          .style('fill', '#999')
+          .text(tick.label);
+      }
     });
 
     // Draw Application Timeline
@@ -242,51 +316,69 @@ const TrellisTimeSeriesChart = ({
         .style('fill', '#495057')
         .text('Application Events');
 
-      // Group applications by day
-      const applicationsByDay = d3.group(applicationData, d => d.application_day);
+      const applicationsByDay = Array.from(
+        d3.group(applicationData, d => d.application_day),
+        ([day, applications]) => ({
+          day: parseInt(day, 10),
+          groups: Array.from(
+            d3.group(applications, d => d.run_label || 'Default scenario'),
+            ([runLabel, runApplications]) => ({
+              runLabel,
+              runId: runApplications[0]?.run_id ?? null,
+              color: runApplications[0]?.color || '#ff6b35',
+              applications: runApplications,
+            })
+          ),
+        })
+      ).sort((a, b) => a.day - b.day);
 
-      // Draw application markers
-      applicationsByDay.forEach((applications, day) => {
-        const x = xScale(parseInt(day));
-        const count = applications.length;
-        
-        // Application marker
-        timelineG.append('circle')
-          .attr('cx', x)
-          .attr('cy', applicationTimelineHeight / 2 + 5)
-          .attr('r', Math.min(4 + Math.log(count), 10))
-          .attr('fill', '#ff6b35')
-          .attr('opacity', 0.8)
-          .attr('stroke', '#fff')
-          .attr('stroke-width', 1)
-          .style('cursor', 'pointer')
-          .on('mouseover', function(event) {
-            const featuresList = applications.map(app => `Feature ${app.lulc_feature_id}`).join(', ');
-            setTooltip({
-              show: true,
-              x: event.pageX + 10,
-              y: event.pageY - 10,
-              content: `Day ${day}: ${count} application(s)\n${featuresList}`
+      applicationsByDay.forEach(({ day, groups }) => {
+        const x = xScale(day);
+        const spacing = 12;
+        const startX = x - ((groups.length - 1) * spacing) / 2;
+
+        groups.forEach((group, groupIndex) => {
+          const groupX = startX + groupIndex * spacing;
+          const count = group.applications.length;
+
+          timelineG.append('circle')
+            .attr('cx', groupX)
+            .attr('cy', applicationTimelineHeight / 2 + 5)
+            .attr('r', Math.min(4 + Math.log(count), 10))
+            .attr('fill', group.color)
+            .attr('opacity', 0.85)
+            .attr('stroke', '#fff')
+            .attr('stroke-width', 1)
+            .style('cursor', 'pointer')
+            .on('mouseover', function(event) {
+              const featuresList = group.applications
+                .map(app => `Feature ${app.lulc_feature_id}`)
+                .join(', ');
+              setTooltip({
+                show: true,
+                x: event.pageX + 10,
+                y: event.pageY - 10,
+                content: `Day ${day} • ${group.runLabel}: ${count} application(s)\n${featuresList}`
+              });
+            })
+            .on('mouseout', () => {
+              setTooltip({ show: false, x: 0, y: 0, content: '' });
+            })
+            .on('click', () => {
+              dispatch(setSelectedTimePoint(day));
             });
-          })
-          .on('mouseout', () => {
-            setTooltip({ show: false, x: 0, y: 0, content: '' });
-          })
-          .on('click', () => {
-            dispatch(setSelectedTimePoint(parseInt(day)));
-          });
 
-        // Count label for multiple applications
-        if (count > 1) {
-          timelineG.append('text')
-            .attr('x', x)
-            .attr('y', applicationTimelineHeight / 2 + 8)
-            .attr('text-anchor', 'middle')
-            .style('font-size', '9px')
-            .style('fill', 'white')
-            .style('pointer-events', 'none')
-            .text(count);
-        }
+          if (count > 1) {
+            timelineG.append('text')
+              .attr('x', groupX)
+              .attr('y', applicationTimelineHeight / 2 + 8)
+              .attr('text-anchor', 'middle')
+              .style('font-size', '9px')
+              .style('fill', 'white')
+              .style('pointer-events', 'none')
+              .text(count);
+          }
+        });
       });
     }
 

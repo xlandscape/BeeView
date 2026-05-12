@@ -7,8 +7,9 @@
 .compare-chart-empty {
   color: #6b7280;
   font-size: 14px;
-  padding: 32px;
+  padding: 40px 32px;
   text-align: center;
+  line-height: 1.6;
 }
 
 .compare-summary {
@@ -19,6 +20,29 @@
   color: #374151;
   margin-bottom: 8px;
   flex-wrap: wrap;
+}
+
+.compare-summary-hint {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.compare-scope-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.compare-scope-control select {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #374151;
+  background: #fff;
 }
 
 .compare-summary .legend-swatch {
@@ -65,4 +89,136 @@
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 10px;
+}
+
+.compare-matrix-wrap {
+  margin-top: 12px;
+}
+
+.compare-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* ── Matrix table scroll wrapper ─────────────────────────────── */
+.compare-matrix-scroll {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.compare-matrix-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 560px;
+  width: 100%;
+}
+
+.compare-matrix-table th,
+.compare-matrix-table td {
+  border: 1px solid #e5e7eb;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+/* ── Header rows ─────────────────────────────────────────────── */
+.compare-matrix-hive-header {
+  background: #f3f4f6;
+  color: #374151;
+  font-weight: 700;
+  text-align: left;
+  vertical-align: bottom;
+  min-width: 120px;
+}
+
+.compare-matrix-group-header {
+  background: #f9fafb;
+  color: #6b7280;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 2px solid #d1d5db;
+  font-size: 11px;
+}
+
+.compare-matrix-pct-header {
+  background: #f9fafb;
+  color: #374151;
+  font-weight: 600;
+  text-align: center;
+  min-width: 72px;
+  font-size: 11px;
+}
+
+.compare-matrix-sparkline-header {
+  background: #f9fafb;
+  color: #374151;
+  font-weight: 600;
+  text-align: center;
+  font-size: 11px;
+  min-width: 120px;
+  vertical-align: bottom;
+}
+
+/* ── Data rows ───────────────────────────────────────────────── */
+.compare-matrix-row:nth-child(even) .compare-matrix-hive,
+.compare-matrix-row:nth-child(even) .compare-matrix-sparkline {
+  background: #f9fafb;
+}
+
+.compare-matrix-hive {
+  text-align: left;
+  font-weight: 500;
+  color: #1f2937;
+  background: #fff;
+  padding: 5px 10px;
+}
+
+.compare-matrix-cell {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  transition: filter 0.1s;
+}
+
+.compare-matrix-sparkline {
+  text-align: center;
+  vertical-align: middle;
+  padding: 2px 6px;
+  background: #fff;
+}
+
+/* ── Summary row (tfoot) ─────────────────────────────────────── */
+.compare-matrix-summary-row td {
+  border-top: 2px solid #9ca3af;
+}
+
+.compare-matrix-summary-cell {
+  opacity: 0.85;
+}
+
+/* ── Colour scale legend ─────────────────────────────────────── */
+.compare-matrix-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.compare-matrix-legend-label {
+  color: #6b7280;
+  margin-right: 4px;
+}
+
+.compare-matrix-legend-swatch {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid rgba(0,0,0,0.08);
 }

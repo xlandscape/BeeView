@@ -7,6 +7,7 @@ import {
   setSelectedMetric,
   setThreshold,
 } from '../../store/slices/runsSlice';
+import { getMCLabel, isSameMC } from '../../utils/runGrouping';
 import './RunSelector.css';
 
 // Metric display names for the dropdown. The keys must match the bee_population_replicate
@@ -27,10 +28,10 @@ const METRIC_OPTIONS = [
 
 function RunOption({ run }) {
   const tag = run.treatment_on ? 'treated' : 'untreated';
-  const label = run.label || run.sim_id;
+  const mcLabel = getMCLabel(run);
   return (
     <option value={run.id}>
-      {label} · {tag} · {run.n_replicates} reps
+      {mcLabel} · {tag} · {run.n_replicates} reps
     </option>
   );
 }
@@ -46,21 +47,41 @@ const RunSelector = () => {
     }
   }, [status, dispatch]);
 
+  // Find the baseline run if selected
+  const baselineRun = useMemo(
+    () => availableRuns.find((r) => r.id === baselineRunId),
+    [availableRuns, baselineRunId]
+  );
+
+  // Filter runs by MC and treatment status.
+  // When baseline is selected, only show treated runs from the same MC.
   const { untreatedRuns, treatedRuns } = useMemo(() => {
+    const allUntreated = availableRuns.filter((r) => !r.treatment_on);
+    let allTreated = availableRuns.filter((r) => r.treatment_on);
+
+    // If baseline is selected, filter treated runs to the same MC.
+    if (baselineRun) {
+      allTreated = allTreated.filter((t) => isSameMC(baselineRun, t));
+    }
+
     return {
-      untreatedRuns: availableRuns.filter((r) => !r.treatment_on),
-      treatedRuns: availableRuns.filter((r) => r.treatment_on),
+      untreatedRuns: allUntreated,
+      treatedRuns: allTreated,
     };
-  }, [availableRuns]);
+  }, [availableRuns, baselineRun]);
 
   const onChangeBaseline = (e) => {
     const v = e.target.value;
     dispatch(setBaselineRunId(v ? Number(v) : null));
+    // Clear scenario when baseline changes, to avoid MC mismatch.
+    dispatch(setScenarioRunId(null));
   };
+
   const onChangeScenario = (e) => {
     const v = e.target.value;
     dispatch(setScenarioRunId(v ? Number(v) : null));
   };
+
   const onChangeMetric = (e) => dispatch(setSelectedMetric(e.target.value));
   const onChangeThreshold = (e) => {
     const v = parseFloat(e.target.value);
@@ -83,6 +104,12 @@ const RunSelector = () => {
 
   return (
     <div className="run-selector">
+      {baselineRun && (baselineRun.outer_mc_id !== undefined || baselineRun.batch_sim_id) && (
+        <div className="mc-note">
+          MC: {baselineRun.batch_sim_id || baselineRun.hive_group_id}
+          {baselineRun.outer_mc_id !== undefined && ` (MC${baselineRun.outer_mc_id})`}
+        </div>
+      )}
       <label>
         Baseline:
         <select value={baselineRunId ?? ''} onChange={onChangeBaseline}>
@@ -97,9 +124,13 @@ const RunSelector = () => {
       </label>
       <label>
         Scenario:
-        <select value={scenarioRunId ?? ''} onChange={onChangeScenario}>
+        <select value={scenarioRunId ?? ''} onChange={onChangeScenario} disabled={!baselineRunId}>
           <option value="">— select —</option>
-          {treatedRuns.length === 0 && <option disabled>(no treated runs)</option>}
+          {treatedRuns.length === 0 && (
+            <option disabled>
+              {baselineRunId ? '(no treated runs in this MC)' : '(select baseline first)'}
+            </option>
+          )}
           {treatedRuns.map((r) => (
             <RunOption key={r.id} run={r} />
           ))}

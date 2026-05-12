@@ -26,6 +26,22 @@
   max-width: 240px;
 }
 
+.run-selector select:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.mc-note {
+  font-size: 11px;
+  color: #6b7280;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-weight: 500;
+}
+
 .run-selector-loading,
 .run-selector-error,
 .run-selector-empty {
@@ -36,3 +52,4 @@
 .run-selector-error {
   color: #b91c1c;
 }
+
