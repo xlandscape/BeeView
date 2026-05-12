@@ -50,6 +50,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [beeLineScope, setBeeLineScope] = useState('mc');
+  const [exposureLineScope, setExposureLineScope] = useState('mc');
   // Per-run replicate aggregates: { [runId]: { metrics: { [name]: {days, mean, ...} } } }
   const [runReplicateData, setRunReplicateData] = useState({});
 
@@ -65,6 +66,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     365,
   );
   const effectiveRunIds = viewRunIds.length > 0 ? viewRunIds : [null];
+  const exposureRunIds = viewRunIds.length > 0 ? viewRunIds : [];
 
   const fetchAverageData = useCallback(async () => {
     setIsLoading(true);
@@ -234,7 +236,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   }, [exposureRequests, selectedFeatureIds]);
 
   const getExposureLines = useCallback((metricName) => {
-    const lines = effectiveRunIds
+    const lines = exposureRunIds
       .map((runId, idx) => {
         const request = getExposureRequest(runId);
         const data = request?.exposureTimeseries || [];
@@ -249,7 +251,59 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       .filter(Boolean);
 
     return lines.length > 0 ? lines : null;
-  }, [effectiveRunIds, getExposureRequest, getRunLabel]);
+  }, [exposureRunIds, getExposureRequest, getRunLabel]);
+
+  const getExposureHiveMeanLines = useCallback((metricName) => {
+    if (!exposureRunIds || exposureRunIds.length === 0) return null;
+
+    const grouped = new Map();
+    exposureRunIds.forEach((runId) => {
+      const run = availableRuns.find((r) => r.id === runId);
+      const request = getExposureRequest(runId);
+      const timeseries = request?.exposureTimeseries || [];
+      if (!timeseries || timeseries.length === 0) return;
+
+      // Keep treated/untreated separate while averaging MC runs.
+      const hiveKey = run?.batch_sim_id || run?.hive_group_id || run?.sim_id || `run ${runId}`;
+      if (!grouped.has(hiveKey)) grouped.set(hiveKey, []);
+      grouped.get(hiveKey).push(timeseries);
+    });
+
+    const lines = [];
+    Array.from(grouped.entries()).forEach(([hiveKey, seriesList], idx) => {
+      if (!seriesList || seriesList.length === 0) return;
+
+      const n = Math.min(...seriesList.map((series) => series.length));
+      if (!Number.isFinite(n) || n <= 0) return;
+
+      const data = [];
+      for (let i = 0; i < n; i += 1) {
+        let sum = 0;
+        let count = 0;
+        seriesList.forEach((series) => {
+          const value = series[i]?.[metricName];
+          if (Number.isFinite(value)) {
+            sum += value;
+            count += 1;
+          }
+        });
+
+        data.push({
+          day: seriesList[0][i]?.day ?? (i + 1),
+          value: count > 0 ? (sum / count) : 0,
+        });
+      }
+
+      lines.push({
+        data,
+        dataKey: 'value',
+        color: RUN_COLOR_PALETTE[idx % RUN_COLOR_PALETTE.length],
+        label: seriesList.length > 1 ? `${hiveKey} (${seriesList.length} MC)` : `${hiveKey}`,
+      });
+    });
+
+    return lines.length > 0 ? lines : null;
+  }, [exposureRunIds, availableRuns, getExposureRequest]);
 
   const getApplicationTimelineData = useCallback(() => {
     return effectiveRunIds.flatMap((runId, idx) => {
@@ -297,12 +351,17 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   };
 
   useEffect(() => {
+    if (activeTab === 'compare') return;
     fetchAverageData();
     fetchBeePopulationData();
-  }, [fetchAverageData, fetchBeePopulationData]);
+  }, [activeTab, fetchAverageData, fetchBeePopulationData]);
 
   useEffect(() => {
     if (activeTab !== 'nectar-pollen' && activeTab !== 'exposure') {
+      return;
+    }
+
+    if (activeTab === 'exposure' && viewRunIds.length === 0) {
       return;
     }
 
@@ -320,7 +379,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         dispatch(fetchExposureTimeseries({ runId, featureIds: selectedFeatureIds }));
       }
     });
-  }, [activeTab, dispatch, effectiveRunIds, getExposureRequest, selectedFeatureIds]);
+  }, [activeTab, dispatch, effectiveRunIds, getExposureRequest, selectedFeatureIds, viewRunIds.length]);
 
   // Add keyboard navigation
   useEffect(() => {
@@ -356,6 +415,16 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     };
   }, [selectedTimePoint, dayCount, dispatch]);
 
+  if (activeTab === 'compare') {
+    return (
+      <div className="timeseries-container">
+        <div className="mb-6">
+          <CompareChart />
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return <div className="timeseries-container">Loading time series data...</div>;
   }
@@ -366,6 +435,9 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
 
   const getChartTitle = () => {
     if (activeTab === 'exposure') {
+      if (viewRunIds.length === 0) {
+        return 'Exposure Time Series - Select runs';
+      }
       if (selectedFeatureIds.length === 0) {
         return "Exposure Time Series - All Features";
       }
@@ -580,20 +652,53 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         </div>
       )}
       
-      {/* Compare runs (treated vs untreated relative change + threshold exceedance) */}
-      {activeTab === 'compare' && (
-        <div className="mb-6">
-          <CompareChart />
-        </div>
-      )}
-
       {/* Exposure Charts using Trellis Layout */}
       {activeTab === 'exposure' && (
         <div className="mb-6">
+          {viewRunIds.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 10,
+                fontSize: 12,
+                color: '#374151',
+              }}
+            >
+              <label htmlFor="exposure-line-scope" style={{ fontWeight: 600 }}>Display:</label>
+              <select
+                id="exposure-line-scope"
+                value={exposureLineScope}
+                onChange={(e) => setExposureLineScope(e.target.value)}
+                style={{
+                  border: '1px solid #d1d5db',
+                  borderRadius: 4,
+                  padding: '4px 8px',
+                  background: '#fff',
+                  color: '#111827',
+                }}
+              >
+                <option value="mc">Individual MC runs</option>
+                <option value="hive_mean">Average MC runs per hive</option>
+              </select>
+            </div>
+          )}
           {(() => {
-            const nectarLines = getExposureLines('nectar_exposure');
-            const pollenLines = getExposureLines('pollen_exposure');
-            const contactLines = getExposureLines('contact_exposure');
+            if (viewRunIds.length === 0) {
+              return (
+                <div className="text-center py-8 text-gray-500">
+                  Select one or more runs in the header to view exposure time series.
+                </div>
+              );
+            }
+
+            const lineBuilder = exposureLineScope === 'hive_mean'
+              ? getExposureHiveMeanLines
+              : getExposureLines;
+            const nectarLines = lineBuilder('nectar_exposure');
+            const pollenLines = lineBuilder('pollen_exposure');
+            const contactLines = lineBuilder('contact_exposure');
             const seriesData = [
               {
                 lines: nectarLines,

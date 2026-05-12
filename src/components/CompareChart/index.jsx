@@ -479,222 +479,117 @@ function HiveRow({ row, dailyRow, simStart }) {
   );
 }
 
-function PercentileMatrix({ data, threshold, simStart }) {
-  const temporalRows = data?.temporal?.per_hive || [];
-  const dailyRows    = data?.per_hive_daily || [];
-  const spatialDays  = data?.days || [];
-  const spatialPerDay = data?.spatial?.per_day || {};
-  const temporalPercentiles = [10, 20, 30, 40, 50, 60, 70, 80, 90];
-  const [chartWidth, setChartWidth] = React.useState(860);
-
-  const percentileOf = (arr, p) => {
-    const v = (arr || []).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
-    if (!v.length) return NaN;
-    if (v.length === 1) return v[0];
-    const idx = (p / 100) * (v.length - 1);
-    const lo = Math.floor(idx);
-    const hi = Math.ceil(idx);
-    const t = idx - lo;
-    return v[lo] * (1 - t) + v[hi] * t;
-  };
-
-  React.useEffect(() => {
-    const el = document.querySelector('.compare-matrix-wrap');
-    if (!el) return;
-    const obs = new ResizeObserver(() => {
-      setChartWidth(Math.max(500, el.clientWidth - 4));
-    });
-    obs.observe(el);
-    setChartWidth(Math.max(500, el.clientWidth - 4));
-    return () => obs.disconnect();
-  }, []);
-
-  if (temporalRows.length === 0) {
+function PercentileMatrix({ data, simStart }) {
+  if (!data || !data.matrix || data.matrix.length === 0) {
     return <div className="compare-status">No paired run data available for matrix view.</div>;
   }
 
-  // Build year column headers if multi-year
-  const firstExc = dailyRows[0]?.exceedance;
-  const nYears = firstExc && firstExc.length > 366 ? Math.floor(firstExc.length / 365) : 0;
-  const yearLabels = nYears > 0
-    ? Array.from({ length: nYears }, (_, y) =>
-        simStart
-          ? String(new Date(simStart + 'T00:00:00').getFullYear() + y)
-          : `Y${y + 1}`
-      )
-    : [];
+  const { matrix, spatial_percentiles, temporal_percentiles } = data;
 
-  // Spatial summary scalars (mean of per-day percentile series across all days)
-  const spatP10 = spatialPerDay.p10;
-  const spatP50 = spatialPerDay.p50;
-  const spatP90 = spatialPerDay.p90;
-  const mean = (arr) => arr ? arr.reduce((a, b) => a + b, 0) / arr.length : NaN;
-  const spatialTemporalMeans = temporalPercentiles.map((p) => mean(spatialPerDay[`p${p}`]));
+  /** Map percent-reduction value to CSS colour.
+   *  value is in percent (e.g. 10 = 10% reduction). Positive = decline.
+   */
+  const reductionColor = (v) => {
+    if (!Number.isFinite(v)) return '#f3f4f6';
+    if (v < 0) return '#dbeafe';       // blue — treated better than baseline
+    if (v < 1) return '#f0fdf4';       // near zero — essentially no effect
+    if (v < 5) return '#dcfce7';       // very mild
+    if (v < 10) return '#fef9c3';      // mild
+    if (v < 20) return '#fde68a';      // moderate
+    if (v < 30) return '#fb923c';      // significant
+    if (v < 50) return '#ef4444';      // severe
+    return '#7f1d1d';                  // extreme
+  };
 
-  // Matrix values: temporal decile (row) × spatial decile across hives (column).
-  // For each temporal percentile pT, collect pT from every hive, then compute spatial pS.
-  const temporalSpatialMatrix = temporalPercentiles.map((pT) => {
-    const perHiveAtTemporal = temporalRows
-      .map((r) => r?.[`p${pT}`])
-      .filter((x) => Number.isFinite(x));
-    return temporalPercentiles.map((pS) => percentileOf(perHiveAtTemporal, pS));
+  const reductionTextColor = (v) => {
+    if (!Number.isFinite(v)) return '#6b7280';
+    return v >= 30 ? '#fff' : '#1f2937';
+  };
+
+  const fmtReduction = (v) => {
+    if (!Number.isFinite(v)) return '—';
+    return `${v.toFixed(1)}%`;
+  };
+
+  // Mean across spatial rows for each temporal column
+  const columnMeans = temporal_percentiles.map((_, colIdx) => {
+    const vals = matrix.map((row) => row[colIdx]).filter((x) => Number.isFinite(x));
+    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : NaN;
   });
-
-  // Annual means, as percentiles across hive locations for each year.
-  // annualSpatialMatrix[rowTemporalIdx][yearIdx]
-  const annualSpatialMatrix = temporalPercentiles.map((pT) =>
-    yearLabels.map((_, y) => {
-      const perHiveAnnualMeans = dailyRows
-        .map((d) => d?.exceedance)
-        .map((exc) => {
-          if (!exc || exc.length < (y + 1) * 365) return NaN;
-          const slice = exc.slice(y * 365, (y + 1) * 365);
-          return mean(slice);
-        })
-        .filter((x) => Number.isFinite(x));
-      return percentileOf(perHiveAnnualMeans, pT);
-    }),
-  );
-
-  // Display orientation requested by user:
-  // rows = spatial percentiles, columns = temporal percentiles.
-  const spatialTemporalDisplayMatrix = temporalPercentiles.map((pS, sIdx) =>
-    temporalPercentiles.map((pT, tIdx) => temporalSpatialMatrix[tIdx][sIdx]),
-  );
-
-  // Annual display matrix with same orientation: rows = spatial percentiles.
-  const annualBySpatialMatrix = temporalPercentiles.map((pS) =>
-    yearLabels.map((_, y) => {
-      const perHiveAnnualMeans = dailyRows
-        .map((d) => d?.exceedance)
-        .map((exc) => {
-          if (!exc || exc.length < (y + 1) * 365) return NaN;
-          const slice = exc.slice(y * 365, (y + 1) * 365);
-          return mean(slice);
-        })
-        .filter((x) => Number.isFinite(x));
-      return percentileOf(perHiveAnnualMeans, pS);
-    }),
-  );
-
-  const temporalColumnMeans = temporalPercentiles.map((_, colIdx) =>
-    mean(
-      spatialTemporalDisplayMatrix
-        .map((row) => row[colIdx])
-        .filter((x) => Number.isFinite(x)),
-    ),
-  );
-
-  const annualColumnMeans = yearLabels.map((_, y) =>
-    mean(
-      annualBySpatialMatrix
-        .map((row) => row[y])
-        .filter((x) => Number.isFinite(x)),
-    ),
-  );
 
   return (
     <div className="compare-matrix-wrap">
-      {/* ── Section title ── */}
-      <div className="compare-section-title">
-        Spatial percentiles across hive locations — decline threshold {(threshold * 100).toFixed(0)}%
+      <div className="compare-section-title" style={{ marginTop: 8 }}>
+        Colony-size reduction matrix — percent decline of treated vs. untreated
       </div>
-
-      {/* ── Spatial band chart ── */}
-      {spatialDays.length > 0 && spatP50 && (
-        <SpatialBandChart
-          days={spatialDays}
-          p10={spatP10 || []}
-          p50={spatP50}
-          p90={spatP90 || []}
-          width={chartWidth}
-          simStart={simStart}
-        />
-      )}
-
-      {/* ── Matrix table ── */}
-      <div className="compare-section-title" style={{ marginTop: 16 }}>
-        Temporal × spatial percentile matrix — fraction of days exceeding decline threshold
+      <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
+        Each cell shows the actual percent-reduction at the given spatial and temporal percentile.
+        Positive values mean treated is smaller than untreated.
       </div>
       <div className="compare-matrix-scroll">
         <table className="compare-matrix-table">
           <thead>
             <tr>
-              <th rowSpan={2} className="compare-matrix-hive-header">Spatial percentile</th>
-              <th colSpan={temporalPercentiles.length} className="compare-matrix-group-header">
+              <th rowSpan={2} className="compare-matrix-hive-header">Spatial ↓ / Temporal →</th>
+              <th colSpan={temporal_percentiles.length} className="compare-matrix-group-header">
                 Temporal percentiles across days
               </th>
-              {nYears > 0 && (
-                <th colSpan={nYears} className="compare-matrix-group-header">
-                  Annual mean exceedance (full years only)
-                </th>
-              )}
             </tr>
             <tr>
-              {temporalPercentiles.map((p) => (
+              {temporal_percentiles.map((p) => (
                 <th key={`head-p${p}`} className="compare-matrix-pct-header">
-                  {p === 50 ? 'temporal p50' : `temporal p${p}`}
+                  p{p}
                 </th>
-              ))}
-              {yearLabels.map(yr => (
-                <th key={yr} className="compare-matrix-pct-header">{yr}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {temporalPercentiles.map((pS, rowIdx) => (
-              <tr key={`srow-${pS}`} className="compare-matrix-row">
-                <td className="compare-matrix-hive" style={{ fontWeight: 600 }}>
-                  {pS === 50 ? 'spatial p50 (median)' : `spatial p${pS}`}
-                </td>
-                {spatialTemporalDisplayMatrix[rowIdx].map((v, colIdx) => (
-                  <td
-                    key={`cell-${pS}-${colIdx}`}
-                    className="compare-matrix-cell"
-                    style={{ background: exceedanceColor(v), color: cellTextColor(v) }}
-                    title={formatMatrixTooltip({
-                      spatialPercentile: pS,
-                      temporalPercentile: temporalPercentiles[colIdx],
-                      value: v,
-                      threshold,
-                    })}
-                  >
-                    {fmtPct(v)}
+            {matrix.map((row, sIdx) => {
+              const pS = spatial_percentiles[sIdx];
+              const isMedianRow = pS === 50;
+              return (
+                <tr key={`srow-${pS}`} className="compare-matrix-row">
+                  <td className="compare-matrix-hive" style={{ fontWeight: isMedianRow ? 700 : 600 }}>
+                    {isMedianRow ? 'spatial p50 (median)' : `spatial p${pS}`}
                   </td>
-                ))}
-                {annualBySpatialMatrix[rowIdx].map((v, y) => (
-                  <td
-                    key={`ann-${pS}-${y}`}
-                    className="compare-matrix-cell"
-                    style={{ background: exceedanceColor(v), color: cellTextColor(v) }}
-                    title={`year ${yearLabels[y]} · spatial p${pS}`}
-                  >
-                    {fmtPct(v)}
-                  </td>
-                ))}
-              </tr>
-            ))}
+                  {row.map((v, tIdx) => {
+                    const pT = temporal_percentiles[tIdx];
+                    const isMedianCol = pT === 50;
+                    return (
+                      <td
+                        key={`cell-${pS}-${tIdx}`}
+                        className="compare-matrix-cell"
+                        style={{
+                          background: reductionColor(v),
+                          color: reductionTextColor(v),
+                          fontWeight: (isMedianRow || isMedianCol) ? 'bold' : 'normal',
+                        }}
+                        title={[
+                          `Spatial p${pS} × Temporal p${pT}: ${fmtReduction(v)} reduction`,
+                          '',
+                          `For ${pS}% of locations, the ${pT}th temporal percentile`,
+                          `of daily colony-size reduction is at or below ${fmtReduction(v)}.`,
+                        ].join('\n')}
+                      >
+                        {fmtReduction(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
-            {/* Spatial summary row */}
             <tr className="compare-matrix-summary-row">
               <td className="compare-matrix-hive" style={{ fontStyle: 'italic' }}>
                 Mean over spatial rows
               </td>
-              {temporalColumnMeans.map((v, idx) => (
-                <td key={`sp-summary-${idx}`} className="compare-matrix-cell compare-matrix-summary-cell"
-                  style={{ background: exceedanceColor(v), color: cellTextColor(v) }}>
-                  {fmtPct(v)}
+              {columnMeans.map((v, idx) => (
+                <td key={`summary-${idx}`} className="compare-matrix-cell compare-matrix-summary-cell"
+                  style={{ background: reductionColor(v), color: reductionTextColor(v) }}>
+                  {fmtReduction(v)}
                 </td>
               ))}
-              {annualColumnMeans.map((v, y) => {
-                return (
-                <td key={y} className="compare-matrix-cell compare-matrix-summary-cell"
-                  style={{ background: exceedanceColor(v), color: cellTextColor(v) }}>
-                  {fmtPct(v)}
-                </td>
-                );
-              })}
             </tr>
           </tfoot>
         </table>
@@ -702,16 +597,19 @@ function PercentileMatrix({ data, threshold, simStart }) {
 
       {/* ── Colour scale legend ── */}
       <div className="compare-matrix-legend">
-        <span className="compare-matrix-legend-label">Exceedance fraction:</span>
+        <span className="compare-matrix-legend-label">Reduction:</span>
         {[
-          { lo: 0,    hi: 0.10, bg: '#fef9c3', label: '< 10%' },
-          { lo: 0.10, hi: 0.25, bg: '#fde68a', label: '10–25%' },
-          { lo: 0.25, hi: 0.50, bg: '#fb923c', label: '25–50%' },
-          { lo: 0.50, hi: 0.75, bg: '#ef4444', label: '50–75%' },
-          { lo: 0.75, hi: 1,    bg: '#7f1d1d', label: '> 75%' },
-        ].map(({ bg, label }) => (
+          { bg: '#dbeafe', label: '< 0% (benefit)' },
+          { bg: '#f0fdf4', label: '~0%' },
+          { bg: '#dcfce7', label: '1–5%' },
+          { bg: '#fef9c3', label: '5–10%' },
+          { bg: '#fde68a', label: '10–20%' },
+          { bg: '#fb923c', label: '20–30%' },
+          { bg: '#ef4444', label: '30–50%' },
+          { bg: '#7f1d1d', label: '> 50%', textColor: '#fff' },
+        ].map(({ bg, label, textColor }) => (
           <span key={label} className="compare-matrix-legend-swatch"
-            style={{ background: bg, color: cellTextColor(bg === '#7f1d1d' ? 1 : 0) }}>
+            style={{ background: bg, color: textColor || '#1f2937' }}>
             {label}
           </span>
         ))}
@@ -1049,7 +947,6 @@ function buildPairSelection(availableRuns, viewRunIds) {
 
 const CompareChart = () => {
   const metric    = useSelector((s) => s.runs.selectedMetric);
-  const threshold = useSelector((s) => s.runs.threshold);
   const availableRuns = useSelector((s) => s.runs.availableRuns);
   const viewRunIds    = useSelector((s) => s.runs.viewRunIds);
 
@@ -1063,7 +960,7 @@ const CompareChart = () => {
     [availableRuns, viewRunIds],
   );
 
-  // Fetch percentile matrix whenever the chip selection or settings change.
+  // Fetch reduction matrix whenever the chip selection or settings change.
   useEffect(() => {
     if (baselineIds.length === 0 || !metric) {
       setMatrixData(null);
@@ -1076,11 +973,9 @@ const CompareChart = () => {
       baseline_ids: baselineIds.join(','),
       scenario_ids: scenarioIds.join(','),
       metric,
-      threshold: String(threshold),
-      mode: 'decline',
       spatial_scope: spatialScope,
     });
-    fetch(buildApiUrl(`/api/compare/percentiles?${params}`), { signal: controller.signal })
+    fetch(buildApiUrl(`/api/compare/reduction-matrix?${params}`), { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -1090,7 +985,7 @@ const CompareChart = () => {
       .finally(() => setLoading(false));
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baselineIds.join(','), scenarioIds.join(','), metric, threshold, spatialScope]);
+  }, [baselineIds.join(','), scenarioIds.join(','), metric, spatialScope]);
 
   // ── No chips selected ────────────────────────────────────────────────────
   if (!viewRunIds || viewRunIds.length === 0) {
@@ -1132,8 +1027,6 @@ const CompareChart = () => {
             <option value="hive_mean">hive mean (aggregate MC first)</option>
           </select>
         </label>
-        <span className="legend-swatch dashed-red" />
-        decline threshold {(threshold * 100).toFixed(0)}%
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af' }}>
           metric:&nbsp;<code>{metric?.split('+').slice(0, 2).join('+').trim()}{metric?.includes('+') ? '…' : ''}</code>
         </span>
@@ -1146,7 +1039,6 @@ const CompareChart = () => {
         <>
           <PercentileMatrix
             data={matrixData}
-            threshold={threshold}
             simStart={simStart}
           />
           <div className="compare-meta">

@@ -1,6 +1,5 @@
 // src/components/Header/index.js
 import React from 'react';
-import RunSelector from '../RunSelector';
 import ViewRunsPicker from '../ViewRunsPicker';
 import './Header.css';
 
@@ -12,7 +11,6 @@ function Header() {
         <span className="header-subtitle">xPollinator Visualization</span>
       </div>
       <div className="header-runs">
-        <RunSelector />
         <ViewRunsPicker />
       </div>
       <div className="header-actions">

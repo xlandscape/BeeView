@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
+  fetchAvailableRuns,
   setViewRunIds,
   RUN_COLOR_PALETTE,
 } from '../../store/slices/runsSlice';
@@ -9,10 +10,25 @@ import './ViewRunsPicker.css';
 
 const ViewRunsPicker = () => {
   const dispatch = useDispatch();
+  const status = useSelector((s) => s.runs.status);
+  const error = useSelector((s) => s.runs.error);
   const availableRuns = useSelector((s) => s.runs.availableRuns);
   const viewRunIds = useSelector((s) => s.runs.viewRunIds);
 
+  useEffect(() => {
+    if (status === 'idle') {
+      dispatch(fetchAvailableRuns());
+    }
+  }, [status, dispatch]);
+
   const groups = useMemo(() => groupRunsByMC(availableRuns || []), [availableRuns]);
+
+  if (status === 'loading') {
+    return <div className="view-runs-picker">Loading runs…</div>;
+  }
+  if (status === 'failed') {
+    return <div className="view-runs-picker">Runs unavailable: {error}</div>;
+  }
 
   if (!availableRuns || availableRuns.length === 0) return null;
 

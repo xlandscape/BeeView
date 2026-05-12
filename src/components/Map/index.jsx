@@ -4,7 +4,7 @@ import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMet
 // import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
-import {GeoJsonLayer, ScatterplotLayer} from 'deck.gl';
+import {GeoJsonLayer, ScatterplotLayer, TextLayer} from 'deck.gl';
 import { getLandUseColor, getLevel1LandUseColor, getLevel2LandUseColor, getLevel3LandUseColor, getNectarColor, getPollenColor, getVegetationColor, getBeePopulationMaxValues } from '../../utils/colorScales';
 // import maplibregl from 'maplibre-gl'; // Import maplibre-gl
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -41,6 +41,13 @@ function getHiveMarkerRadiusPixels(zoom) {
   return 8;
 }
 
+function offsetHiveCoordinates([lon, lat], role) {
+  const delta = 0.00008;
+  if (role === 'treated') return [lon + delta, lat + delta];
+  if (role === 'untreated') return [lon - delta, lat - delta];
+  return [lon, lat];
+}
+
 function DeckGLOverlay(props) {
   const overlay = useControl(() => new DeckOverlay(props));
   overlay.setProps(props);
@@ -60,10 +67,10 @@ function Map() {
   const [beePopulationData, setBeePopulationDataState] = useState(null);
   const [beePopulationTimeSeries, setBeePopulationTimeSeries] = useState(null);
   const [beePopulationMaxValues, setBeePopulationMaxValues] = useState({});
-  const [beehiveLocation, setBeehiveLocation] = useState(null);
   const [vegetationMapping, setVegetationMapping] = useState(null);
   const [applicationsData, setApplicationsData] = useState([]);
   const [debugMode, setDebugMode] = useState(false); // 🐛 Debug mode toggle
+  const [hiveHoverInfo, setHiveHoverInfo] = useState(null);
   const hiveMarkerRadius = useMemo(() => getHiveMarkerRadiusPixels(viewState.zoom), [viewState.zoom]);
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
@@ -73,8 +80,7 @@ function Map() {
   const { availableRuns, baselineRunId, scenarioRunId, viewRunIds } = useSelector(state => state.runs);
 
   // Build hive markers for the currently selected baseline / scenario runs.
-  // We render these alongside the legacy beehive marker so they are visible even
-  // when the legacy Beehive layer is hidden — they convey "which run's hive".
+  // These convey "which run's hive" for multi-run scenarios.
   const selectedRunHives = useMemo(() => {
     const markers = [];
     const findRun = (id) => availableRuns.find(r => r.id === id);
@@ -100,15 +106,36 @@ function Map() {
   // Hive markers for all view-selected runs, shown when the Beehive layer is toggled on.
   const viewRunHives = useMemo(() => {
     if (!layerVisibility.Beehive?.visible) return [];
-    return viewRunIds
+    const grouped = new globalThis.Map();
+    viewRunIds
       .map(id => availableRuns.find(r => r.id === id))
       .filter(r => r && r.hive_lon != null && r.hive_lat != null)
-      .map(r => ({
-        coordinates: [r.hive_lon, r.hive_lat],
-        role: r.treatment_on ? 'treated' : 'untreated',
-        run: r,
-      }));
+      .forEach((r) => {
+        const role = r.treatment_on ? 'treated' : 'untreated';
+        const hiveKey = r.hive_group_id || r.batch_sim_id || r.sim_id;
+        const key = `${hiveKey}::${role}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            coordinates: offsetHiveCoordinates([r.hive_lon, r.hive_lat], role),
+            role,
+            run: r,
+            hiveKey,
+            selectedRuns: 0,
+          });
+        }
+        grouped.get(key).selectedRuns += 1;
+      });
+    return Array.from(grouped.values());
   }, [availableRuns, viewRunIds, layerVisibility.Beehive?.visible]);
+
+  const hiveNumberByKey = useMemo(() => {
+    const keys = Array.from(new Set(viewRunHives.map((h) => h.hiveKey))).sort((a, b) => a.localeCompare(b));
+    const mapping = {};
+    keys.forEach((key, idx) => {
+      mapping[key] = idx + 1;
+    });
+    return mapping;
+  }, [viewRunHives]);
 
   // Debounced viewport data loading with longer delay for zoom changes
   const debouncedLoadViewportData = useCallback(
@@ -178,25 +205,6 @@ function Map() {
   useEffect(() => {
     console.log('Loading initial GeoJSON and max values data...');
     debouncedLoadViewportData(INITIAL_VIEW_STATE);
-  }, []); // Empty dependency array - run only once
-
-  // Load beehive location data once
-  useEffect(() => {
-    const loadBeehiveLocation = async () => {
-      try {
-        const response = await fetch(buildApiUrl('/api/beehive-location'));
-        if (response.ok) {
-          const location = await response.json();
-          setBeehiveLocation(location);
-          console.log('Beehive location loaded:', location);
-        }
-        // 404/500 means no template.xrun is available; per-run markers cover this case.
-      } catch (error) {
-        console.warn('Beehive location unavailable:', error.message);
-      }
-    };
-    
-    loadBeehiveLocation();
   }, []); // Empty dependency array - run only once
 
   // Load vegetation mapping data once
@@ -704,32 +712,6 @@ function Map() {
         wireframe: false,
       });
     })(), // Close the IIFE
-    // Beehive location layer
-    layerVisibility.Beehive?.visible &&
-    beehiveLocation &&
-      new ScatterplotLayer({
-        id: 'beehive-layer',
-        data: [{
-          coordinates: [beehiveLocation.x, beehiveLocation.y],
-          radius: hiveMarkerRadius
-        }],
-        getPosition: d => d.coordinates,
-        getRadius: d => d.radius,
-        getFillColor: [255, 165, 0, 200], // Orange color with transparency
-        getLineColor: [255, 255, 255, 255],
-        getLineWidth: 2,
-        stroked: true,
-        filled: true,
-        radiusUnits: 'pixels',
-        lineWidthUnits: 'pixels',
-        pickable: true,
-        autoHighlight: true,
-        updateTriggers: {
-          getFillColor: [beehiveLocation],
-          getPosition: [beehiveLocation],
-          getRadius: [hiveMarkerRadius]
-        }
-      }),
     // Selected-runs hive markers (baseline = blue, scenario = red).
     // Always rendered when runs are selected, independent of the legacy Beehive layer toggle.
     selectedRunHives.length > 0 &&
@@ -769,11 +751,48 @@ function Map() {
         radiusUnits: 'pixels',
         lineWidthUnits: 'pixels',
         pickable: true,
+        onHover: (info) => {
+          if (!info.object) {
+            setHiveHoverInfo(null);
+            return;
+          }
+          const obj = info.object;
+          const hiveNumber = hiveNumberByKey[obj.hiveKey] || '?';
+          setHiveHoverInfo({
+            x: info.x,
+            y: info.y,
+            hiveNumber,
+            hiveKey: obj.hiveKey,
+            role: obj.role,
+            selectedRuns: obj.selectedRuns,
+          });
+        },
         autoHighlight: true,
         updateTriggers: {
           getFillColor: [viewRunHives],
           getPosition: [viewRunHives],
           getRadius: [hiveMarkerRadius],
+          onHover: [hiveNumberByKey],
+        },
+      }),
+    viewRunHives.length > 0 &&
+      new TextLayer({
+        id: 'view-runs-hive-label-layer',
+        data: viewRunHives,
+        getPosition: d => d.coordinates,
+        getText: d => String(hiveNumberByKey[d.hiveKey] || ''),
+        getColor: d => d.role === 'treated' ? [234, 88, 12, 255] : [13, 148, 136, 255],
+        getSize: 13,
+        sizeUnits: 'pixels',
+        getTextAnchor: 'middle',
+        getAlignmentBaseline: 'center',
+        billboard: true,
+        fontWeight: 800,
+        pickable: false,
+        updateTriggers: {
+          getText: [hiveNumberByKey],
+          getColor: [viewRunHives],
+          getPosition: [viewRunHives],
         },
       })
   ].filter(Boolean);
@@ -839,30 +858,27 @@ function Map() {
         </div>
       )}
       
-      {/* Debug mode toggle button */}
-      <button
-        onClick={() => {
-          setDebugMode(!debugMode);
-          console.log(`🐛 Debug mode ${!debugMode ? 'ENABLED' : 'DISABLED'} - Click on features to see detailed information in console`);
-        }}
-        style={{
-          position: 'absolute',
-          bottom: '10px',
-          right: '10px',
-          background: debugMode ? '#4CAF50' : '#757575',
-          color: 'white',
-          border: 'none',
-          padding: '8px 12px',
-          borderRadius: '4px',
-          fontSize: '12px',
-          cursor: 'pointer',
-          zIndex: 1000,
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-        }}
-        title={debugMode ? 'Disable debug mode' : 'Enable debug mode - click features to see detailed info in console'}
-      >
-        🐛 Debug: {debugMode ? 'ON' : 'OFF'}
-      </button>
+      {hiveHoverInfo && (
+        <div
+          style={{
+            position: 'absolute',
+            left: hiveHoverInfo.x + 10,
+            top: hiveHoverInfo.y + 10,
+            background: 'rgba(17, 24, 39, 0.92)',
+            color: '#f9fafb',
+            borderRadius: '6px',
+            padding: '6px 8px',
+            fontSize: '12px',
+            pointerEvents: 'none',
+            zIndex: 1200,
+            maxWidth: '240px',
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>Hive #{hiveHoverInfo.hiveNumber}</div>
+          <div>{hiveHoverInfo.hiveKey}</div>
+          <div>{hiveHoverInfo.role} · {hiveHoverInfo.selectedRuns} selected MC run{hiveHoverInfo.selectedRuns === 1 ? '' : 's'}</div>
+        </div>
+      )}
     </div>
   );
 }
