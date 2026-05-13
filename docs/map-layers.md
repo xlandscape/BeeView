@@ -74,6 +74,8 @@ Each marker is labelled with a sequential hive number. Hovering over a marker sh
 
 Highlights parcels that receive **pesticide applications** during the simulation. These parcels are overlaid with a semi-transparent orange fill so the underlying land-use colours remain partially visible.
 
+This layer requires at least one **treated** run to be selected via the View chips in the header. The applications data is loaded from the selected treated run's experiment folder. If only untreated runs are selected, no application polygons will appear even if the layer toggle is enabled.
+
 This layer is useful for identifying which landscape features are treated and correlating them with nectar/pollen contamination visible in the Exposure tab.
 
 ![Applications layer](img/map-applications.png)

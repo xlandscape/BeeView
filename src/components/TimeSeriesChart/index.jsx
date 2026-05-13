@@ -367,14 +367,13 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
 
     effectiveRunIds.forEach((runId) => {
       const request = getExposureRequest(runId);
-      if (request?.applicationsStatus !== 'loading' && request?.applicationsStatus !== 'succeeded') {
+      if (!request?.applicationsStatus || request.applicationsStatus === 'idle') {
         dispatch(fetchApplications({ runId, featureIds: selectedFeatureIds }));
       }
 
       if (
         activeTab === 'exposure' &&
-        request?.exposureStatus !== 'loading' &&
-        request?.exposureStatus !== 'succeeded'
+        (!request?.exposureStatus || request.exposureStatus === 'idle')
       ) {
         dispatch(fetchExposureTimeseries({ runId, featureIds: selectedFeatureIds }));
       }

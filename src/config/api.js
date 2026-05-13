@@ -20,6 +20,13 @@ const getApiConfig = () => {
 
 // Build the complete API base URL
 export const getApiBaseUrl = () => {
+  // When served from BeeView-server (same origin), use current origin.
+  // Otherwise fall back to explicit config or localhost:32000.
+  if (!import.meta.env.VITE_API_HOST && !import.meta.env.VITE_API_PORT
+      && typeof window !== 'undefined' && window.location.port !== '3000'
+      && window.location.port !== '8081' && window.location.port !== '8082') {
+    return window.location.origin;
+  }
   const config = getApiConfig();
   return `${config.protocol}://${config.host}:${config.port}`;
 };

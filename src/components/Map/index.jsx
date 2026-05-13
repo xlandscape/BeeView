@@ -293,24 +293,32 @@ function Map() {
     loadBeeMetadata();
   }, [dispatch]);
 
-  // Load ALL applications data once for the applications layer
+  // Find the first treated run among selected view runs (for applications layer)
+  const treatedViewRunId = useMemo(() => {
+    for (const id of viewRunIds) {
+      const run = availableRuns.find(r => r.id === id);
+      if (run && run.treatment_on) return id;
+    }
+    return scenarioRunId; // fallback to compare-tab selection
+  }, [viewRunIds, availableRuns, scenarioRunId]);
+
+  // Load applications data for the active treated run
   useEffect(() => {
+    if (treatedViewRunId == null) {
+      setApplicationsData([]);
+      return;
+    }
     const loadApplications = async () => {
       try {
-        console.log('🚀 Map: Starting to load applications data...');
-        console.log('🚀 Map: Applications layer visibility:', layerVisibility.Applications?.visible);
-        // Load all applications data (no feature filter for the layer)
-        const data = await loadApplicationsData();
-        console.log('🚀 Map: Received applications data:', data);
+        const data = await loadApplicationsData([], treatedViewRunId);
         setApplicationsData(data);
-        console.log(`✅ Map: Loaded ${data.length} total application records for applications layer`);
       } catch (error) {
-        console.error('❌ Map: Failed to load applications data:', error);
+        console.error('Failed to load applications data:', error);
         setApplicationsData([]);
       }
     };
     loadApplications();
-  }, []); // Load once on component mount
+  }, [treatedViewRunId]);
 
   // Get applications data for selected features (for timeline)
   const selectedApplicationsData = useMemo(() => {
