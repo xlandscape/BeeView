@@ -403,8 +403,8 @@ export function isFullDatasetCached(timePoint = null) {
     const hasPollen = viewportCache.get(`full_pollen_${timePoint}`) !== null;
     return hasGeoJson && hasNectar && hasPollen;
   } else {
-    const hasNectar = viewportCache.get('full_nectar_max') !== null;
-    const hasPollen = viewportCache.get('full_pollen_max') !== null;
+    const hasNectar = viewportCache.get('full_nectar') !== null;
+    const hasPollen = viewportCache.get('full_pollen') !== null;
     return hasGeoJson && hasNectar && hasPollen;
   }
 }
@@ -418,8 +418,8 @@ export async function loadViewportData(viewState, options = {}) {
     console.log('Viewport queries disabled - returning cached full dataset');
     
     const fullGeoJson = viewportCache.get('full_geojson');
-    const fullNectar = viewportCache.get('full_nectar_max');
-    const fullPollen = viewportCache.get('full_pollen_max');
+    const fullNectar = viewportCache.get('full_nectar');
+    const fullPollen = viewportCache.get('full_pollen');
     
     // If we have cached data, return it immediately without making API calls
     if (fullGeoJson && fullNectar && fullPollen) {

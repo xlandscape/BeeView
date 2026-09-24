@@ -1,18 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics, setVegetationCodesMap } from '../../store/slices/mapSlice';
-// import DeckGL from '@deck.gl/react';
 import {Map as MapLibre, NavigationControl, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
-import {GeoJsonLayer, ScatterplotLayer, TextLayer} from 'deck.gl';
-import { getLandUseColor, getLevel1LandUseColor, getLevel2LandUseColor, getLevel3LandUseColor, getNectarColor, getPollenColor, getVegetationColor, getBeePopulationMaxValues } from '../../utils/colorScales';
-// import maplibregl from 'maplibre-gl'; // Import maplibre-gl
+import {GeoJsonLayer, ScatterplotLayer, TextLayer} from '@deck.gl/layers';
+import {DataFilterExtension} from '@deck.gl/extensions';
+import { getLandUseColor, getNectarColor, getPollenColor, getVegetationColor } from '../../utils/colorScales';
 import 'maplibre-gl/dist/maplibre-gl.css';
-// import LandUseLayer from './LandUseLayer';
-// import MapControls from './MapControls';
 import { selectFeature, clearSelection } from '../../store/reducers/selectionReducer';
 import { setHivePosition } from '../../store/slices/simulationSlice';
-import { loadViewportData, loadViewportDataForTimePoint, loadTimePointData, loadBeePopulationData, loadBeePopulationTimeSeries, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
+import { loadViewportData, loadTimePointData, loadBeePopulationData, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
 import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
 
@@ -34,6 +31,13 @@ const INITIAL_VIEW_STATE = {
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
+const GRAY = [200, 200, 200];
+const APPLICATION_ORANGE = [255, 107, 53];
+const LINE_RGB = [50, 50, 50];
+
+// One shared extension instance so layer props stay referentially stable.
+const L1_FILTER_EXTENSION = new DataFilterExtension({ filterSize: 1 });
+
 function getHiveMarkerRadiusPixels(zoom) {
   if (zoom >= 14) return 18;
   if (zoom >= 12) return 15;
@@ -49,9 +53,29 @@ function offsetHiveCoordinates([lon, lat], role) {
   return [lon, lat];
 }
 
+// WGS84 -> Web Mercator (EPSG:3857), rounded to 4 decimals for the simulation form.
+function toWebMercator(lng, lat) {
+  const x = lng * 20037508.34 / 180;
+  const latRad = lat * Math.PI / 180;
+  const y = Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 20037508.34 / Math.PI;
+  return { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 };
+}
+
+// The full GeoJSON (with geometry) stays inside this component. Other parts
+// of the UI only need ids and properties, so that is all we put in Redux:
+// it keeps the store small and avoids Immer freezing 2.6M coordinates.
+function toLightFeatureCollection(geoJson) {
+  return {
+    type: 'FeatureCollection',
+    features: geoJson.features.map((f) => ({ type: 'Feature', id: f.id, properties: f.properties })),
+  };
+}
+
 function DeckGLOverlay(props) {
   const overlay = useControl(() => new DeckOverlay(props));
-  overlay.setProps(props);
+  useEffect(() => {
+    overlay.setProps(props);
+  });
   return null;
 }
 
@@ -60,38 +84,47 @@ function Map() {
   const [geoJsonData, setGeoJsonData] = useState(null);
   const [nectarMax, setNectarData] = useState(null);
   const [pollenMax, setPollenData] = useState(null);
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [lastZoom, setLastZoom] = useState(INITIAL_VIEW_STATE.zoom);
-  const lastProcessedTimePoint = useRef(null);
   const [beePopulationData, setBeePopulationDataState] = useState(null);
-  const [beePopulationTimeSeries, setBeePopulationTimeSeries] = useState(null);
-  const [beePopulationMaxValues, setBeePopulationMaxValues] = useState({});
   const [vegetationMapping, setVegetationMapping] = useState(null);
   const [applicationsData, setApplicationsData] = useState([]);
   const [debugMode, setDebugMode] = useState(false); // 🐛 Debug mode toggle
   const [hiveHoverInfo, setHiveHoverInfo] = useState(null);
-  const hiveMarkerRadius = useMemo(() => getHiveMarkerRadiusPixels(viewState.zoom), [viewState.zoom]);
+  // The map view lives in a ref: re-rendering React on every mouse move is
+  // wasted work because deck.gl/maplibre already own the camera. Only the
+  // zoom-dependent marker radius is React state, and it changes rarely.
+  const viewStateRef = useRef(INITIAL_VIEW_STATE);
+  const lastZoomRef = useRef(INITIAL_VIEW_STATE.zoom);
+  const [hiveMarkerRadius, setHiveMarkerRadius] = useState(() => getHiveMarkerRadiusPixels(INITIAL_VIEW_STATE.zoom));
+  const lastProcessedTimePoint = useRef(null);
+  const beePopulationRequestId = useRef(0);
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
-  const layerVisibility = useSelector(state => state.layers);
-  const { selectedTimePoint } = useSelector(state => state.time);
-  const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
-  const { availableRuns, baselineRunId, scenarioRunId, viewRunIds } = useSelector(state => state.runs);
-  const hivePlacementMode = useSelector(state => state.simulation.hivePlacementMode);
-  const simForm = useSelector(state => state.simulation.form);
-  const simPanelOpen = useSelector(state => state.simulation.panelOpen);
+  const lulcVisible = useSelector((state) => state.layers.LULC?.visible);
+  const nectarVisible = useSelector((state) => state.layers.Nectar?.visible);
+  const pollenVisible = useSelector((state) => state.layers.Pollen?.visible);
+  const vegetationVisible = useSelector((state) => state.layers.Vegetation?.visible);
+  const applicationsVisible = useSelector((state) => state.layers.Applications?.visible);
+  const beehiveVisible = useSelector((state) => state.layers.Beehive?.visible);
+  const selectedTimePoint = useSelector((state) => state.time.selectedTimePoint);
+  const selectedFeatureIds = useSelector((state) => state.selection.selectedFeatureIds);
+  const availableRuns = useSelector((state) => state.runs.availableRuns);
+  const baselineRunId = useSelector((state) => state.runs.baselineRunId);
+  const scenarioRunId = useSelector((state) => state.runs.scenarioRunId);
+  const viewRunIds = useSelector((state) => state.runs.viewRunIds);
+  const hivePlacementMode = useSelector((state) => state.simulation.hivePlacementMode);
+  const simPanelOpen = useSelector((state) => state.simulation.panelOpen);
+  const simHiveX = useSelector((state) => state.simulation.form.BeeHaveMapCenterPointX);
+  const simHiveY = useSelector((state) => state.simulation.form.BeeHaveMapCenterPointY);
 
   // Compute simulation hive marker position (WGS84) from form coordinates (EPSG:3857)
   const simHiveMarker = useMemo(() => {
-    const x = simForm.BeeHaveMapCenterPointX;
-    const y = simForm.BeeHaveMapCenterPointY;
-    if (!x || !y || !simPanelOpen) return null;
-    const lon = (x / 20037508.34) * 180;
-    const lat = (180 / Math.PI) * (2 * Math.atan(Math.exp((y / 20037508.34) * 180 * Math.PI / 180)) - Math.PI / 2);
+    if (!simHiveX || !simHiveY || !simPanelOpen) return null;
+    const lon = (simHiveX / 20037508.34) * 180;
+    const lat = (180 / Math.PI) * (2 * Math.atan(Math.exp((simHiveY / 20037508.34) * 180 * Math.PI / 180)) - Math.PI / 2);
     return { coordinates: [lon, lat] };
-  }, [simForm.BeeHaveMapCenterPointX, simForm.BeeHaveMapCenterPointY, simPanelOpen]);
+  }, [simHiveX, simHiveY, simPanelOpen]);
 
   // Build hive markers for the currently selected baseline / scenario runs.
   // These convey "which run's hive" for multi-run scenarios.
@@ -119,10 +152,11 @@ function Map() {
 
   // Hive markers for all view-selected runs, shown when the Beehive layer is toggled on.
   const viewRunHives = useMemo(() => {
-    if (!layerVisibility.Beehive?.visible) return [];
+    if (!beehiveVisible) return [];
+    const runsById = new globalThis.Map(availableRuns.map((r) => [r.id, r]));
     const grouped = new globalThis.Map();
     viewRunIds
-      .map(id => availableRuns.find(r => r.id === id))
+      .map(id => runsById.get(id))
       .filter(r => r && r.hive_lon != null && r.hive_lat != null)
       .forEach((r) => {
         const role = r.treatment_on ? 'treated' : 'untreated';
@@ -140,7 +174,7 @@ function Map() {
         grouped.get(key).selectedRuns += 1;
       });
     return Array.from(grouped.values());
-  }, [availableRuns, viewRunIds, layerVisibility.Beehive?.visible]);
+  }, [availableRuns, viewRunIds, beehiveVisible]);
 
   const hiveNumberByKey = useMemo(() => {
     const keys = Array.from(new Set(viewRunHives.map((h) => h.hiveKey))).sort((a, b) => a.localeCompare(b));
@@ -151,75 +185,63 @@ function Map() {
     return mapping;
   }, [viewRunHives]);
 
-  // Debounced viewport data loading with longer delay for zoom changes
-  const debouncedLoadViewportData = useCallback(
-    debounce(async (currentViewState, interactionType = 'pan') => {
-      if (!currentViewState) return;
-      
-      setLoading(true);
-      setError(null);
-      
-      try {
-        console.log('Loading viewport data for:', currentViewState, 'interaction:', interactionType);
-        
-        // Load full dataset (GeoJSON + max nectar/pollen values)
-        console.log('Loading full viewport data (GeoJSON + max values)');
-        const data = await loadViewportData(currentViewState);
-        
-        setGeoJsonData(data.geoJson);
-        setNectarData(data.nectar);
-        setPollenData(data.pollen);
-        
-        // Update Redux store
-        dispatch(setLandUseData(data.geoJson));
-        dispatch(setNectarMax(data.nectar));
-        
-      } catch (err) {
-        console.error('Error loading viewport data:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }, 1500), // 1.5 second debounce for stability
-    [] // No dependencies - this only loads GeoJSON and max values
+  // ---------------------------------------------------------------- loading
+  const applyViewportData = useCallback((data) => {
+    setGeoJsonData(data.geoJson);
+    setNectarData(data.nectar);
+    setPollenData(data.pollen);
+    dispatch(setLandUseData(toLightFeatureCollection(data.geoJson)));
+    dispatch(setNectarMax(data.nectar));
+  }, [dispatch]);
+
+  const loadAndApplyViewportData = useCallback(async (currentViewState) => {
+    if (!currentViewState) return;
+    setLoading(true);
+    setError(null);
+    try {
+      applyViewportData(await loadViewportData(currentViewState));
+    } catch (err) {
+      console.error('Error loading viewport data:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [applyViewportData]);
+
+  // Debounced variant, only used when viewport queries are enabled.
+  const debouncedLoadViewportData = useMemo(
+    () => debounce((currentViewState) => loadAndApplyViewportData(currentViewState), 1500),
+    [loadAndApplyViewportData]
   );
 
-  // Separate function for loading only time-specific data
-  const debouncedLoadTimePointData = useCallback(
-    debounce(async (currentViewState, timePoint) => {
-      if (!currentViewState || !timePoint) return;
-      
-      setLoading(true);
-      setError(null);
-      
-      try {
-        console.log(`Loading time-specific data for time point: ${timePoint}`);
-        
-        // Load only nectar/pollen data for the specific time point
-        const timeData = await loadTimePointData(currentViewState, timePoint);
-        
-        // Update only nectar and pollen data, keep existing GeoJSON
-        setNectarData(timeData.nectar);
-        setPollenData(timeData.pollen);
-        
-        // Update Redux store with new nectar data
-        dispatch(setNectarMax(timeData.nectar));
-        
-      } catch (err) {
-        console.error('Error loading time-specific data:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }, 800), // Shorter debounce for time changes (more responsive)
-    [] // No dependencies
+  const loadAndApplyTimePointData = useCallback(async (timePoint) => {
+    if (!timePoint) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const timeData = await loadTimePointData(viewStateRef.current, timePoint);
+      // Ignore responses that arrive after the user moved on to another day.
+      if (lastProcessedTimePoint.current !== timePoint) return;
+      setNectarData(timeData.nectar);
+      setPollenData(timeData.pollen);
+      dispatch(setNectarMax(timeData.nectar));
+    } catch (err) {
+      console.error('Error loading time-specific data:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [dispatch]);
+
+  const debouncedLoadTimePointData = useMemo(
+    () => debounce((timePoint) => loadAndApplyTimePointData(timePoint), 800),
+    [loadAndApplyTimePointData]
   );
 
-  // Load initial viewport data only once (GeoJSON + max values)
+  // Load initial data once (GeoJSON + max values). No debounce: nothing to coalesce on mount.
   useEffect(() => {
-    console.log('Loading initial GeoJSON and max values data...');
-    debouncedLoadViewportData(INITIAL_VIEW_STATE);
-  }, []); // Empty dependency array - run only once
+    loadAndApplyViewportData(INITIAL_VIEW_STATE);
+  }, [loadAndApplyViewportData]);
 
   // Load vegetation mapping data once
   useEffect(() => {
@@ -238,7 +260,6 @@ function Map() {
           });
           setVegetationMapping(featureVegetationMap);
           dispatch(setVegetationCodesMap(featureVegetationMap));
-          console.log('Vegetation mapping loaded:', featureVegetationMap);
         } else {
           console.warn('Vegetation mapping not found');
         }
@@ -248,58 +269,48 @@ function Map() {
     };
 
     loadVegetationMapping();
-  }, []); // Empty dependency array - run only once
+  }, [dispatch]);
 
-  // Load time-specific data when selected time point changes
+  // Load time-specific data when selected time point changes.
+  // Cached days are applied immediately; uncached days are debounced so
+  // scrubbing through the timeline does not fire a request per step.
   useEffect(() => {
-    console.log('Map component: selectedTimePoint changed to:', selectedTimePoint);
-    
-    // Skip if no time point selected or if it's the same as last processed
     if (!selectedTimePoint || selectedTimePoint === lastProcessedTimePoint.current) {
       return;
     }
-    
-    // Check if viewport queries are disabled and we have cached data
+    lastProcessedTimePoint.current = selectedTimePoint;
     const config = getViewportConfig();
     if (!config.USE_VIEWPORT_QUERIES && config.ENABLE_CACHING && isFullDatasetCached(selectedTimePoint)) {
-      console.log(`Cached time-specific data available for time point ${selectedTimePoint} - skipping API call`);
-      lastProcessedTimePoint.current = selectedTimePoint;
-      return;
+      loadAndApplyTimePointData(selectedTimePoint);
+    } else {
+      debouncedLoadTimePointData(selectedTimePoint);
     }
-    
-    console.log('Loading time-specific nectar/pollen data for time point:', selectedTimePoint);
-    lastProcessedTimePoint.current = selectedTimePoint;
-    debouncedLoadTimePointData(viewState || INITIAL_VIEW_STATE, selectedTimePoint);
-  }, [selectedTimePoint, debouncedLoadTimePointData]);
+  }, [selectedTimePoint, loadAndApplyTimePointData, debouncedLoadTimePointData]);
 
-  // Load bee population data when selected time point changes
+  // Load bee population data when selected time point changes (latest request wins)
   useEffect(() => {
-    if (selectedTimePoint) {
-      const loadBeeData = async () => {
-        try {
-          const data = await loadBeePopulationData(selectedTimePoint);
-          setBeePopulationDataState(data);
-          dispatch(setBeePopulationData(data));
-        } catch (error) {
-          console.error('Failed to load bee population data:', error);
-        }
-      };
-      loadBeeData();
-    }
+    if (!selectedTimePoint) return;
+    const requestId = ++beePopulationRequestId.current;
+    const loadBeeData = async () => {
+      try {
+        const data = await loadBeePopulationData(selectedTimePoint);
+        if (requestId !== beePopulationRequestId.current) return;
+        setBeePopulationDataState(data);
+        dispatch(setBeePopulationData(data));
+      } catch (error) {
+        console.error('Failed to load bee population data:', error);
+      }
+    };
+    loadBeeData();
   }, [selectedTimePoint, dispatch]);
 
-  // Load bee population time series and metrics on mount
+  // Load bee population metrics on mount. (The full population time series
+  // used to be fetched here too, but nothing on the map consumed it; the
+  // charts load their own.)
   useEffect(() => {
     const loadBeeMetadata = async () => {
       try {
-        const [timeSeries, metrics] = await Promise.all([
-          loadBeePopulationTimeSeries(),
-          loadBeePopulationMetrics()
-        ]);
-        
-        setBeePopulationTimeSeries(timeSeries);
-        setBeePopulationMaxValues(getBeePopulationMaxValues(timeSeries));
-        dispatch(setBeePopulationMetrics(metrics));
+        dispatch(setBeePopulationMetrics(await loadBeePopulationMetrics()));
       } catch (error) {
         console.error('Failed to load bee population metadata:', error);
       }
@@ -322,59 +333,45 @@ function Map() {
       setApplicationsData([]);
       return;
     }
+    let cancelled = false;
     const loadApplications = async () => {
       try {
         const data = await loadApplicationsData([], treatedViewRunId);
-        setApplicationsData(data);
+        if (!cancelled) setApplicationsData(data);
       } catch (error) {
         console.error('Failed to load applications data:', error);
-        setApplicationsData([]);
+        if (!cancelled) setApplicationsData([]);
       }
     };
     loadApplications();
+    return () => { cancelled = true; };
   }, [treatedViewRunId]);
-
-  // Get applications data for selected features (for timeline)
-  const selectedApplicationsData = useMemo(() => {
-    console.log('🔍 Map: Computing selectedApplicationsData...', { 
-      applicationsDataLength: applicationsData?.length || 0,
-      selectedFeatureIdsLength: selectedFeatureIds?.length || 0,
-      selectedFeatureIds 
-    });
-    if (!applicationsData || selectedFeatureIds.length === 0) return [];
-    const filtered = applicationsData.filter(app => selectedFeatureIds.includes(app.lulc_feature_id));
-    console.log('🔍 Map: Filtered applications for selected features:', filtered.length, 'records');
-    return filtered;
-  }, [applicationsData, selectedFeatureIds]);
 
   // Handle viewport changes
   const handleViewStateChange = useCallback((evt) => {
     const newViewState = evt.viewState;
-    setViewState(newViewState);
-    
+    viewStateRef.current = newViewState;
+    const radius = getHiveMarkerRadiusPixels(newViewState.zoom);
+    setHiveMarkerRadius((prev) => (prev === radius ? prev : radius));
+
     // Skip loading data if viewport queries are disabled
-    const config = getViewportConfig();
-    if (!config.USE_VIEWPORT_QUERIES) {
-      console.log('Viewport queries disabled - skipping data reload on viewport change');
+    if (!getViewportConfig().USE_VIEWPORT_QUERIES) {
       return;
     }
-    
+
     // Detect if this is primarily a zoom change
-    const zoomChange = Math.abs(newViewState.zoom - lastZoom) > 0.5;
-    setLastZoom(newViewState.zoom);
-    
+    const zoomChange = Math.abs(newViewState.zoom - lastZoomRef.current) > 0.5;
+    lastZoomRef.current = newViewState.zoom;
+
     // Use longer debounce for zoom changes
     if (zoomChange) {
-      console.log('Zoom change detected, using longer debounce');
-      // For zoom changes, wait longer before loading new data
       setTimeout(() => {
-        debouncedLoadViewportData(newViewState, 'zoom');
+        debouncedLoadViewportData(newViewState);
       }, 1000); // Additional 1 second delay for zoom
     } else {
-      // Regular pan/move operations
-      debouncedLoadViewportData(newViewState, 'pan');
+      debouncedLoadViewportData(newViewState);
     }
-  }, [debouncedLoadViewportData, lastZoom]);
+  }, [debouncedLoadViewportData]);
 
   // Keyboard shortcut for debug mode (Ctrl/Cmd + D)
   useEffect(() => {
@@ -399,29 +396,20 @@ function Map() {
 
   // Get unique feature IDs that have applications
   const featuresWithApplications = useMemo(() => {
-    console.log('🔍 Map: Computing featuresWithApplications...', { 
-      applicationsDataLength: applicationsData?.length || 0 
-    });
-    if (!applicationsData || applicationsData.length === 0) {
-      console.log('🔍 Map: No applications data, returning empty set');
-      return new Set();
-    }
-    const uniqueFeatureIds = new Set(applicationsData.map(app => app.lulc_feature_id));
-    console.log('🔍 Map: Features with applications:', uniqueFeatureIds.size, 'unique features');
-    console.log('🔍 Map: Sample feature IDs:', Array.from(uniqueFeatureIds).slice(0, 10));
-    return uniqueFeatureIds;
+    if (!applicationsData || applicationsData.length === 0) return new Set();
+    return new Set(applicationsData.map(app => app.lulc_feature_id));
   }, [applicationsData]);
 
-  // Optimize data filtering with useMemo to prevent re-filtering on every render
-  const filteredGeoJsonData = useMemo(() => {
-    if (!geoJsonData) return null;
-    return {
-      ...geoJsonData,
-      features: geoJsonData.features.filter((feature) =>
-        activeFilters.length === 0 || activeFilters.includes(feature.properties.L1_label)
-      )
-    };
-  }, [geoJsonData, activeFilters]);
+  // Subset of polygons that received applications (drawn as an overlay).
+  const applicationsFeatures = useMemo(() => {
+    if (!geoJsonData || featuresWithApplications.size === 0) return [];
+    return geoJsonData.features.filter((feature) => featuresWithApplications.has(feature.id));
+  }, [geoJsonData, featuresWithApplications]);
+
+  // Snapshot of state for the debug console output, so the click handler
+  // does not have to be recreated (and every layer re-diffed) whenever data changes.
+  const debugSnapshotRef = useRef(null);
+  debugSnapshotRef.current = { selectedTimePoint, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping };
 
   // Enhanced click handler with comprehensive debugging
   const handleFeatureClick = useCallback(async (info) => {
@@ -429,48 +417,42 @@ function Map() {
     if (hivePlacementMode) {
       const [lng, lat] = info.coordinate || [];
       if (lng != null && lat != null) {
-        const x = lng * 20037508.34 / 180;
-        const latRad = lat * Math.PI / 180;
-        const y = Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 20037508.34 / Math.PI;
-        dispatch(setHivePosition({
-          x: Math.round(x * 10000) / 10000,
-          y: Math.round(y * 10000) / 10000,
-        }));
+        dispatch(setHivePosition(toWebMercator(lng, lat)));
       }
       return;
     }
     if (info.object) {
       const featureId = info.object.id;
       dispatch(selectFeature(featureId));
-      
+
       // 🐛 DEBUG: Only show debug info when debug mode is enabled
       if (debugMode) {
+        const snap = debugSnapshotRef.current;
         console.group(`🐛 DEBUG: Selected Feature ${featureId}`);
-        
+
         // Basic feature info
         console.log('📍 Feature Object:', info.object);
         console.log('🗺️  Feature Properties:', info.object.properties);
         console.log('📐 Geometry Type:', info.object.geometry?.type);
         console.log('🎯 Click Coordinates:', info.coordinate);
-        
+
         // Current UI state
-        console.log('⏰ Selected Time Point:', selectedTimePoint);
-        console.log('👁️  Layer Visibility:', layerVisibility);
-        console.log('🔍 Active Filters:', activeFilters);
-        console.log('📋 All Selected Features:', selectedFeatureIds);
-        
+        console.log('⏰ Selected Time Point:', snap.selectedTimePoint);
+        console.log('🔍 Active Filters:', snap.activeFilters);
+        console.log('📋 All Selected Features:', snap.selectedFeatureIds);
+
         // Data availability
         console.log('📊 Data Availability:');
-        console.log('  - GeoJSON Data:', !!geoJsonData);
-        console.log('  - Nectar Max Data:', !!nectarMax);
-        console.log('  - Pollen Max Data:', !!pollenMax);
-        console.log('  - Bee Population Data:', !!beePopulationData);
-        console.log('  - Vegetation Mapping:', !!vegetationMapping);
-        
+        console.log('  - GeoJSON Data:', !!snap.geoJsonData);
+        console.log('  - Nectar Max Data:', !!snap.nectarMax);
+        console.log('  - Pollen Max Data:', !!snap.pollenMax);
+        console.log('  - Bee Population Data:', !!snap.beePopulationData);
+        console.log('  - Vegetation Mapping:', !!snap.vegetationMapping);
+
         // Try to fetch detailed data for this feature
         try {
           console.log('🔄 Fetching detailed data for feature...');
-          
+
           // Get nectar timeseries if available
           try {
             const nectarResponse = await fetch(buildApiUrl(`/nectar/timeseries/${featureId}`));
@@ -489,7 +471,7 @@ function Map() {
           } catch (err) {
             console.warn('⚠️  Error fetching nectar data:', err.message);
           }
-          
+
           // Get pollen timeseries if available
           try {
             const pollenResponse = await fetch(buildApiUrl(`/pollen/timeseries/${featureId}`));
@@ -508,7 +490,7 @@ function Map() {
           } catch (err) {
             console.warn('⚠️  Error fetching pollen data:', err.message);
           }
-          
+
           // Get vegetation info if available
           try {
             const vegetationResponse = await fetch(buildApiUrl(`/api/vegetation/feature/${featureId}`));
@@ -521,59 +503,23 @@ function Map() {
           } catch (err) {
             console.warn('⚠️  Error fetching vegetation data:', err.message);
           }
-          
+
         } catch (err) {
           console.error('❌ Error fetching detailed feature data:', err);
         }
-        
+
         console.groupEnd();
       }
     }
-  }, [dispatch, debugMode, selectedTimePoint, layerVisibility, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping, applicationsData, hivePlacementMode]);
-
-  // Helper function to get fill color with opacity-based highlighting
-  const getHighlightedFillColor = useCallback((feature, baseColor) => {
-    const hasSelection = selectedFeatureIds.length > 0;
-    if (!hasSelection) {
-      return [baseColor[0], baseColor[1], baseColor[2], 200]; // Default opacity when nothing is selected
-    }
-    
-    const isSelected = selectedFeatureIds.includes(feature.id);
-    const opacity = isSelected ? 255 : 80; // Selected: full opacity, others: very dimmed
-    return [baseColor[0], baseColor[1], baseColor[2], opacity];
-  }, [selectedFeatureIds]);
-
-  // Get line color for selection highlighting (simplified)
-  const getSelectionLineColor = useCallback((feature) => {
-    const hasSelection = selectedFeatureIds.length > 0;
-    if (!hasSelection) {
-      return [50, 50, 50, 100]; // Default line when nothing is selected
-    }
-    
-    const isSelected = selectedFeatureIds.includes(feature.id);
-    const opacity = isSelected ? 200 : 50; // Selected: visible lines, others: very faint
-    return [50, 50, 50, opacity];
-  }, [selectedFeatureIds]);
-
-  // Get line width - no special highlighting
-  const getSelectionLineWidth = useCallback((feature) => {
-    return 1; // Consistent line width for all features
-  }, []);
+  }, [dispatch, debugMode, hivePlacementMode]);
 
   // Handle map background clicks to clear selection
-  const handleMapClick = useCallback((info, event) => {
+  const handleMapClick = useCallback((info) => {
     // If hive placement mode is active, place hive at click location
     if (hivePlacementMode) {
       const [lng, lat] = info.coordinate || [];
       if (lng != null && lat != null) {
-        // Convert WGS84 to Web Mercator (EPSG:3857)
-        const x = lng * 20037508.34 / 180;
-        const latRad = lat * Math.PI / 180;
-        const y = Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 20037508.34 / Math.PI;
-        dispatch(setHivePosition({
-          x: Math.round(x * 10000) / 10000,
-          y: Math.round(y * 10000) / 10000,
-        }));
+        dispatch(setHivePosition(toWebMercator(lng, lat)));
       }
       return;
     }
@@ -583,186 +529,121 @@ function Map() {
     }
   }, [dispatch, hivePlacementMode]);
 
-  const layers = [
-    layerVisibility.LULC.visible && 
-    filteredGeoJsonData &&
-      new GeoJsonLayer({
-        id: 'geojson-layer',
-        data: filteredGeoJsonData.features,
-        filled: true,
-        getFillColor: (feature) => {
-          const baseColor = getLandUseColor(feature.properties.L3_label, 3);
-          return getHighlightedFillColor(feature, baseColor);
-        },
-        stroked: true,
-        getLineColor: getSelectionLineColor,
-        getLineWidth: getSelectionLineWidth,
-        lineWidthMinPixels: 1,
-        pickable: true,
-        autoHighlight: true,
-        onClick: handleFeatureClick,
-        // Performance optimizations
-        updateTriggers: {
-          getFillColor: [layerVisibility.LULC.visible, selectedFeatureIds],
-          getLineColor: [selectedFeatureIds],
-          getLineWidth: [selectedFeatureIds]
-        },
-        wireframe: false,
-      }),
-    layerVisibility.Nectar.visible && 
-    nectarMax &&
-    filteredGeoJsonData &&
-      new GeoJsonLayer({ 
-        id: 'nectar-layer',
-        data: filteredGeoJsonData.features,
-        filled: true,
-        getFillColor: (feature) => {
-          if (!nectarMax || !nectarMax[feature.id]) {
-            const baseColor = [200, 200, 200, 255];
-            return getHighlightedFillColor(feature, baseColor);
-          }
-          const nectar = nectarMax[feature.id];
-          const baseColor = getNectarColor(nectar);
-          return getHighlightedFillColor(feature, baseColor);
-        },
-        stroked: true,
-        getLineColor: getSelectionLineColor,
-        getLineWidth: getSelectionLineWidth,
-        lineWidthMinPixels: 1,
-        pickable: true,
-        autoHighlight: true,
-        onClick: handleFeatureClick,
-        // Performance optimizations
-        updateTriggers: {
-          getFillColor: [nectarMax, layerVisibility.Nectar.visible, selectedFeatureIds],
-          getLineColor: [selectedFeatureIds],
-          getLineWidth: [selectedFeatureIds]
-        },
-        wireframe: false,
-      }),
-    layerVisibility.Pollen?.visible && 
-    pollenMax &&
-    filteredGeoJsonData &&
-      new GeoJsonLayer({ 
-        id: 'pollen-layer',
-        data: filteredGeoJsonData.features,
-        filled: true,
-        getFillColor: (feature) => {
-          if (!pollenMax || !pollenMax[feature.id]) {
-            const baseColor = [200, 200, 200, 255];
-            return getHighlightedFillColor(feature, baseColor);
-          }
-          const pollen = pollenMax[feature.id];
-          const baseColor = typeof getPollenColor === 'function' ? getPollenColor(pollen) : [255, 200, 0, 255];
-          return getHighlightedFillColor(feature, baseColor);
-        },
-        stroked: true,
-        getLineColor: getSelectionLineColor,
-        getLineWidth: getSelectionLineWidth,
-        lineWidthMinPixels: 1,
-        pickable: true,
-        autoHighlight: true,
-        onClick: handleFeatureClick,
-        // Performance optimizations
-        updateTriggers: {
-          getFillColor: [pollenMax, layerVisibility.Pollen.visible, selectedFeatureIds],
-          getLineColor: [selectedFeatureIds],
-          getLineWidth: [selectedFeatureIds]
-        },
-        wireframe: false,
-      }),
-    // Vegetation layer
-    layerVisibility.Vegetation?.visible && 
-    vegetationMapping &&
-    filteredGeoJsonData &&
-      new GeoJsonLayer({ 
-        id: 'vegetation-layer',
-        data: filteredGeoJsonData.features,
-        filled: true,
-        getFillColor: (feature) => {
-          const featureId = feature.id;
+  // ------------------------------------------------------------ polygon styling
+  // Selection membership as a Set: the accessors below run once per feature
+  // (25k) on every recolor, so Array.includes would be O(features x selected).
+  const selectedSet = useMemo(() => new Set(selectedFeatureIds), [selectedFeatureIds]);
+  const hasSelection = selectedFeatureIds.length > 0;
+  const activeFilterSet = useMemo(() => new Set(activeFilters), [activeFilters]);
 
-          if (!featureId || !vegetationMapping || !vegetationMapping[featureId]) {
-            const baseColor = [200, 200, 200, 255]; // Gray for missing mapping
-            return getHighlightedFillColor(feature, baseColor);
-          }
+  // Which thematic colouring the landscape polygons use. Previously each mode
+  // was its own GeoJsonLayer stacked on top of the others, which tessellated
+  // the whole landscape once per visible layer. The topmost visible layer
+  // dominated visually, so we render exactly that one.
+  const fillMode = useMemo(() => {
+    if (vegetationVisible && vegetationMapping) return 'vegetation';
+    if (pollenVisible && pollenMax) return 'pollen';
+    if (nectarVisible && nectarMax) return 'nectar';
+    if (lulcVisible) return 'lulc';
+    return null;
+  }, [vegetationVisible, vegetationMapping, pollenVisible, pollenMax, nectarVisible, nectarMax, lulcVisible]);
 
-          const vegetationInfo = vegetationMapping[featureId];
-          const vegetationType = vegetationInfo.vegetation_name;
+  const getSelectionAlpha = useCallback((featureId) => {
+    if (!hasSelection) return 200; // Default opacity when nothing is selected
+    return selectedSet.has(featureId) ? 255 : 80; // Selected: full opacity, others: very dimmed
+  }, [hasSelection, selectedSet]);
 
-          if (!vegetationType) {
-            const baseColor = [200, 200, 200, 255]; // Gray for unmapped
-            return getHighlightedFillColor(feature, baseColor);
-          }
-
-          const baseColor = getVegetationColor(vegetationType);
-          return getHighlightedFillColor(feature, baseColor);
-        },
-        stroked: true,
-        getLineColor: getSelectionLineColor,
-        getLineWidth: getSelectionLineWidth,
-        lineWidthMinPixels: 1,
-        pickable: true,
-        autoHighlight: true,
-        onClick: handleFeatureClick,
-        // Performance optimizations
-        updateTriggers: {
-          getFillColor: [vegetationMapping, layerVisibility.Vegetation.visible, selectedFeatureIds],
-          getLineColor: [selectedFeatureIds],
-          getLineWidth: [selectedFeatureIds]
-        },
-        wireframe: false,
-      }),
-    // Applications layer - shows features with plant protection product applications
-    (() => {
-      const shouldRender = layerVisibility.Applications?.visible && 
-                           filteredGeoJsonData &&
-                           featuresWithApplications.size > 0;
-      console.log('🎨 Map: Applications layer rendering decision:', {
-        layerVisible: layerVisibility.Applications?.visible,
-        hasGeoJsonData: !!filteredGeoJsonData,
-        featuresWithApplicationsCount: featuresWithApplications.size,
-        shouldRender
-      });
-      
-      if (!shouldRender) {
-        console.log('🎨 Map: Skipping applications layer rendering');
-        return null;
+  const getFillColor = useCallback((feature) => {
+    let base;
+    switch (fillMode) {
+      case 'vegetation': {
+        const vegetationType = vegetationMapping[feature.id]?.vegetation_name;
+        base = vegetationType ? getVegetationColor(vegetationType) : GRAY;
+        break;
       }
+      case 'pollen': {
+        const value = pollenMax[feature.id];
+        base = value ? getPollenColor(value) : GRAY;
+        break;
+      }
+      case 'nectar': {
+        const value = nectarMax[feature.id];
+        base = value ? getNectarColor(value) : GRAY;
+        break;
+      }
+      default:
+        base = getLandUseColor(feature.properties.L3_label, 3);
+    }
+    return [base[0], base[1], base[2], getSelectionAlpha(feature.id)];
+  }, [fillMode, vegetationMapping, pollenMax, nectarMax, getSelectionAlpha]);
 
-      const applicationsFeatures = filteredGeoJsonData.features.filter(feature => featuresWithApplications.has(feature.id));
-      console.log('🎨 Map: Applications layer features:', applicationsFeatures.length, 'features to render');
-      console.log('🎨 Map: Debugging feature ID mismatch...');
-      console.log('🎨 Map: Sample GeoJSON feature IDs:', filteredGeoJsonData.features.slice(0, 5).map(f => f.id));
-      console.log('🎨 Map: Sample application feature IDs:', Array.from(featuresWithApplications).slice(0, 5));
-      console.log('🎨 Map: GeoJSON feature properties sample:', filteredGeoJsonData.features[0]?.properties);
-      
-      return new GeoJsonLayer({ 
+  const getApplicationFillColor = useCallback(
+    (feature) => [APPLICATION_ORANGE[0], APPLICATION_ORANGE[1], APPLICATION_ORANGE[2], getSelectionAlpha(feature.id)],
+    [getSelectionAlpha]
+  );
+
+  const getLineColor = useCallback((feature) => {
+    if (!hasSelection) return [LINE_RGB[0], LINE_RGB[1], LINE_RGB[2], 100];
+    return [LINE_RGB[0], LINE_RGB[1], LINE_RGB[2], selectedSet.has(feature.id) ? 200 : 50];
+  }, [hasSelection, selectedSet]);
+
+  // L1 land-use filters are applied on the GPU via DataFilterExtension, so
+  // toggling a filter neither rebuilds the data array nor re-tessellates.
+  const getFilterValue = useCallback(
+    (feature) => (activeFilterSet.size === 0 || activeFilterSet.has(feature.properties.L1_label) ? 1 : 0),
+    [activeFilterSet]
+  );
+
+  const landscapeFeatures = geoJsonData ? geoJsonData.features : null;
+
+  const layers = useMemo(() => [
+    fillMode &&
+    landscapeFeatures &&
+      new GeoJsonLayer({
+        id: 'landscape-layer',
+        data: landscapeFeatures,
+        filled: true,
+        stroked: true,
+        getFillColor,
+        getLineColor,
+        getLineWidth: 1,
+        lineWidthMinPixels: 1,
+        pickable: true,
+        autoHighlight: true,
+        onClick: handleFeatureClick,
+        extensions: [L1_FILTER_EXTENSION],
+        getFilterValue,
+        filterRange: [1, 1],
+        updateTriggers: {
+          getFillColor: [getFillColor],
+          getLineColor: [getLineColor],
+          getFilterValue: [getFilterValue],
+        },
+      }),
+    // Applications overlay - features with plant protection product applications
+    applicationsVisible &&
+    applicationsFeatures.length > 0 &&
+      new GeoJsonLayer({
         id: 'applications-layer',
         data: applicationsFeatures,
         filled: true,
-        getFillColor: (feature) => {
-          // Semi-transparent orange overlay to indicate applications
-          // Use low opacity so underlying layers remain visible
-          const baseColor = [255, 107, 53, 80]; // Orange with 31% opacity (80/255)
-          return getHighlightedFillColor(feature, baseColor);
-        },
         stroked: true,
-        getLineColor: getSelectionLineColor,
-        getLineWidth: getSelectionLineWidth,
+        getFillColor: getApplicationFillColor,
+        getLineColor,
+        getLineWidth: 1,
         lineWidthMinPixels: 1,
         pickable: true,
         autoHighlight: true,
         onClick: handleFeatureClick,
-        // Performance optimizations
+        extensions: [L1_FILTER_EXTENSION],
+        getFilterValue,
+        filterRange: [1, 1],
         updateTriggers: {
-          getFillColor: [featuresWithApplications, layerVisibility.Applications.visible, selectedFeatureIds],
-          getLineColor: [selectedFeatureIds],
-          getLineWidth: [selectedFeatureIds]
+          getFillColor: [getApplicationFillColor],
+          getLineColor: [getLineColor],
+          getFilterValue: [getFilterValue],
         },
-        wireframe: false,
-      });
-    })(), // Close the IIFE
+      }),
     // Selected-runs hive markers (baseline = blue, scenario = red).
     // Always rendered when runs are selected, independent of the legacy Beehive layer toggle.
     selectedRunHives.length > 0 &&
@@ -880,23 +761,11 @@ function Map() {
         lineWidthUnits: 'pixels',
         pickable: false,
       }),
-  ].filter(Boolean);
-
-  // Show loading state
-  if (loading && !geoJsonData) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        flexDirection: 'column'
-      }}>
-        <div>Loading viewport data...</div>
-        {error && <div style={{ color: 'red', marginTop: '10px' }}>Error: {error}</div>}
-      </div>
-    );
-  }
+  ].filter(Boolean), [
+    fillMode, landscapeFeatures, getFillColor, getLineColor, getFilterValue, handleFeatureClick,
+    applicationsVisible, applicationsFeatures, getApplicationFillColor,
+    selectedRunHives, viewRunHives, hiveNumberByKey, hiveMarkerRadius, simHiveMarker,
+  ]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', cursor: hivePlacementMode ? 'crosshair' : undefined }}>
@@ -909,7 +778,7 @@ function Map() {
           🎯 Click to place beehive
         </div>
       )}
-      <MapLibre 
+      <MapLibre
         initialViewState={INITIAL_VIEW_STATE}
         onMove={handleViewStateChange}
         mapStyle={MAP_STYLE}
@@ -917,7 +786,7 @@ function Map() {
         <DeckGLOverlay layers={layers} onClick={handleMapClick} /* interleaved*/ />
         <NavigationControl position="top-left" />
       </MapLibre>
-      
+
       {/* Loading indicator for viewport changes */}
       {loading && (
         <div style={{
@@ -931,10 +800,10 @@ function Map() {
           fontSize: '12px',
           zIndex: 1000
         }}>
-          Loading...
+          {geoJsonData ? 'Loading...' : 'Loading landscape...'}
         </div>
       )}
-      
+
       {/* Error indicator */}
       {error && (
         <div style={{
@@ -951,7 +820,7 @@ function Map() {
           Error: {error}
         </div>
       )}
-      
+
       {hiveHoverInfo && (
         <div
           style={{

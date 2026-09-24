@@ -2,8 +2,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  // Keep console output in dev, strip it from production bundles.
+  esbuild: command === 'build' ? { drop: ['console', 'debugger'] } : {},
   base: './',
   resolve: {
     alias: {
@@ -24,5 +26,4 @@ export default defineConfig({
       },
     target: 'esnext', // Use modern JavaScript features
   },
-  
-});
+}));

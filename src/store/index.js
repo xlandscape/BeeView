@@ -17,6 +17,11 @@ const store = configureStore({
     selection: selectionReducer,
     time: timeReducer,
   },
+  // The dev-only immutability/serializability checks walk the entire state
+  // tree after every action. With ~25k landscape features in state.map that
+  // costs tens of milliseconds per dispatch, so they are disabled.
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({ immutableCheck: false, serializableCheck: false }),
 });
 
 export default store;
