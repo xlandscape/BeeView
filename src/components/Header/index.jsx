@@ -1,9 +1,14 @@
 // src/components/Header/index.js
 import React from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import ViewRunsPicker from '../ViewRunsPicker';
+import { toggleSimulationPanel } from '../../store/slices/simulationSlice';
 import './Header.css';
 
 function Header() {
+  const dispatch = useDispatch();
+  const panelOpen = useSelector((state) => state.simulation.panelOpen);
+
   return (
     <div className="header">
       <div className="header-title">
@@ -14,12 +19,13 @@ function Header() {
         <ViewRunsPicker />
       </div>
       <div className="header-actions">
-        {/* <button className="header-button">
-          <i className="fa fa-download"></i> Export
+        <button
+          className={`header-button sim-launch-btn ${panelOpen ? 'active' : ''}`}
+          onClick={() => dispatch(toggleSimulationPanel())}
+          title="Launch new xPollinator simulation"
+        >
+          🚀 New Simulation
         </button>
-        <button className="header-button">
-          <i className="fa fa-question-circle"></i> Help
-        </button> */}
       </div>
     </div>
   );

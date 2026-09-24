@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import LandUseHistogram from './components/Histogram/LandUseHistogram';
 import TimeSeriesChart from './components/TimeSeriesChart';
+import SimulationPanel from './components/SimulationPanel';
 import { setSelectedTimePoint } from './store/timeSlice';
 import './App.css';
 
 function App() {
   const dispatch = useDispatch();
   const [activeChartTab, setActiveChartTab] = useState('nectar-pollen');
+  const simulationPanelOpen = useSelector((state) => state.simulation.panelOpen);
 
   useEffect(() => {
     // Initialize app with just the default time point
@@ -76,6 +78,7 @@ function App() {
             <LandUseHistogram />
           </div>
         </div>
+        {simulationPanelOpen && <SimulationPanel />}
       </div>
     </div>
   );

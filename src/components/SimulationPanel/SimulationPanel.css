@@ -1,0 +1,281 @@
+.simulation-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 360px;
+  height: 100%;
+  background: #fff;
+  border-left: 1px solid #e1e5ea;
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.sim-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e1e5ea;
+}
+
+.sim-panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sim-close-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: #666;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.sim-close-btn:hover {
+  background: #f0f0f0;
+}
+
+.sim-panel-tabs {
+  display: flex;
+  border-bottom: 1px solid #e1e5ea;
+}
+
+.sim-tab {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: #666;
+  border-bottom: 2px solid transparent;
+}
+
+.sim-tab.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+.job-count {
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border-radius: 8px;
+  margin-left: 4px;
+}
+
+.sim-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+/* Form */
+.sim-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sim-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sim-section label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.sim-section input,
+.sim-section select {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.sim-section input:focus,
+.sim-section select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.sim-coord-row {
+  display: flex;
+  gap: 6px;
+}
+
+.sim-coord-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sim-btn-place {
+  padding: 6px 12px;
+  border: 1px dashed #2563eb;
+  border-radius: 4px;
+  background: #f0f5ff;
+  color: #2563eb;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.sim-btn-place.active {
+  background: #2563eb;
+  color: #fff;
+  border-style: solid;
+  animation: pulse-border 1.5s infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(37, 99, 235, 0); }
+}
+
+.sim-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sim-btn-reset {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.sim-btn-launch {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.sim-btn-launch:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.sim-btn-launch:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sim-msg {
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.sim-msg.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.sim-msg.error {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/* Jobs */
+.sim-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-empty {
+  text-align: center;
+  color: #999;
+  padding: 2rem;
+}
+
+.sim-job-card {
+  border: 1px solid #e1e5ea;
+  border-radius: 6px;
+  padding: 10px;
+  border-left: 3px solid #e1e5ea;
+}
+
+.sim-job-card.status-running,
+.sim-job-card.status-importing {
+  border-left-color: #2563eb;
+}
+
+.sim-job-card.status-done {
+  border-left-color: #28a745;
+}
+
+.sim-job-card.status-error {
+  border-left-color: #dc3545;
+}
+
+.sim-job-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.sim-job-meta {
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 4px;
+}
+
+.sim-job-error {
+  background: #fff5f5;
+  padding: 6px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  max-height: 80px;
+  overflow-y: auto;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.sim-job-actions {
+  margin-top: 6px;
+}
+
+.sim-btn-cancel {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 3px;
+  background: #dc3545;
+  color: #fff;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.sim-btn-view {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 3px;
+  background: #28a745;
+  color: #fff;
+  font-size: 0.75rem;
+  cursor: pointer;
+}

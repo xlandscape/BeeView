@@ -11,6 +11,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // import LandUseLayer from './LandUseLayer';
 // import MapControls from './MapControls';
 import { selectFeature, clearSelection } from '../../store/reducers/selectionReducer';
+import { setHivePosition } from '../../store/slices/simulationSlice';
 import { loadViewportData, loadViewportDataForTimePoint, loadTimePointData, loadBeePopulationData, loadBeePopulationTimeSeries, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
 import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
@@ -78,6 +79,19 @@ function Map() {
   const { selectedTimePoint } = useSelector(state => state.time);
   const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
   const { availableRuns, baselineRunId, scenarioRunId, viewRunIds } = useSelector(state => state.runs);
+  const hivePlacementMode = useSelector(state => state.simulation.hivePlacementMode);
+  const simForm = useSelector(state => state.simulation.form);
+  const simPanelOpen = useSelector(state => state.simulation.panelOpen);
+
+  // Compute simulation hive marker position (WGS84) from form coordinates (EPSG:3857)
+  const simHiveMarker = useMemo(() => {
+    const x = simForm.BeeHaveMapCenterPointX;
+    const y = simForm.BeeHaveMapCenterPointY;
+    if (!x || !y || !simPanelOpen) return null;
+    const lon = (x / 20037508.34) * 180;
+    const lat = (180 / Math.PI) * (2 * Math.atan(Math.exp((y / 20037508.34) * 180 * Math.PI / 180)) - Math.PI / 2);
+    return { coordinates: [lon, lat] };
+  }, [simForm.BeeHaveMapCenterPointX, simForm.BeeHaveMapCenterPointY, simPanelOpen]);
 
   // Build hive markers for the currently selected baseline / scenario runs.
   // These convey "which run's hive" for multi-run scenarios.
@@ -411,6 +425,20 @@ function Map() {
 
   // Enhanced click handler with comprehensive debugging
   const handleFeatureClick = useCallback(async (info) => {
+    // If hive placement mode is active, place hive instead of selecting feature
+    if (hivePlacementMode) {
+      const [lng, lat] = info.coordinate || [];
+      if (lng != null && lat != null) {
+        const x = lng * 20037508.34 / 180;
+        const latRad = lat * Math.PI / 180;
+        const y = Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 20037508.34 / Math.PI;
+        dispatch(setHivePosition({
+          x: Math.round(x * 10000) / 10000,
+          y: Math.round(y * 10000) / 10000,
+        }));
+      }
+      return;
+    }
     if (info.object) {
       const featureId = info.object.id;
       dispatch(selectFeature(featureId));
@@ -501,7 +529,7 @@ function Map() {
         console.groupEnd();
       }
     }
-  }, [dispatch, debugMode, selectedTimePoint, layerVisibility, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping, applicationsData]);
+  }, [dispatch, debugMode, selectedTimePoint, layerVisibility, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping, applicationsData, hivePlacementMode]);
 
   // Helper function to get fill color with opacity-based highlighting
   const getHighlightedFillColor = useCallback((feature, baseColor) => {
@@ -534,11 +562,26 @@ function Map() {
 
   // Handle map background clicks to clear selection
   const handleMapClick = useCallback((info, event) => {
+    // If hive placement mode is active, place hive at click location
+    if (hivePlacementMode) {
+      const [lng, lat] = info.coordinate || [];
+      if (lng != null && lat != null) {
+        // Convert WGS84 to Web Mercator (EPSG:3857)
+        const x = lng * 20037508.34 / 180;
+        const latRad = lat * Math.PI / 180;
+        const y = Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 20037508.34 / Math.PI;
+        dispatch(setHivePosition({
+          x: Math.round(x * 10000) / 10000,
+          y: Math.round(y * 10000) / 10000,
+        }));
+      }
+      return;
+    }
     // If no object was clicked (clicking on background), clear the selection
     if (!info.object) {
       dispatch(clearSelection());
     }
-  }, [dispatch]);
+  }, [dispatch, hivePlacementMode]);
 
   const layers = [
     layerVisibility.LULC.visible && 
@@ -802,7 +845,41 @@ function Map() {
           getColor: [viewRunHives],
           getPosition: [viewRunHives],
         },
-      })
+      }),
+
+    // Simulation hive placement: 5km foraging radius circle
+    simHiveMarker &&
+      new ScatterplotLayer({
+        id: 'sim-hive-radius-layer',
+        data: [simHiveMarker],
+        getPosition: d => d.coordinates,
+        getRadius: 5000,
+        radiusUnits: 'meters',
+        filled: true,
+        stroked: true,
+        getFillColor: [37, 99, 235, 25],
+        getLineColor: [37, 99, 235, 180],
+        getLineWidth: 2,
+        lineWidthUnits: 'pixels',
+        pickable: false,
+      }),
+
+    // Simulation hive placement: hive marker dot
+    simHiveMarker &&
+      new ScatterplotLayer({
+        id: 'sim-hive-marker-layer',
+        data: [simHiveMarker],
+        getPosition: d => d.coordinates,
+        getRadius: 8,
+        radiusUnits: 'pixels',
+        filled: true,
+        stroked: true,
+        getFillColor: [37, 99, 235, 220],
+        getLineColor: [255, 255, 255, 255],
+        getLineWidth: 2,
+        lineWidthUnits: 'pixels',
+        pickable: false,
+      }),
   ].filter(Boolean);
 
   // Show loading state
@@ -822,7 +899,16 @@ function Map() {
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', cursor: hivePlacementMode ? 'crosshair' : undefined }}>
+      {hivePlacementMode && (
+        <div style={{
+          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 10, background: '#2563eb', color: '#fff', padding: '6px 14px',
+          borderRadius: 20, fontSize: '0.85rem', fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+        }}>
+          🎯 Click to place beehive
+        </div>
+      )}
       <MapLibre 
         initialViewState={INITIAL_VIEW_STATE}
         onMove={handleViewStateChange}

@@ -56,6 +56,19 @@
   .header-button:hover {
     background-color: #2980b9;
   }
+
+  .sim-launch-btn {
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .sim-launch-btn.active {
+    background-color: #e67e22;
+  }
+
+  .sim-launch-btn.active:hover {
+    background-color: #d35400;
+  }
   
   @media (max-width: 600px) {
     .header {

@@ -3,6 +3,7 @@ import mapReducer from './slices/mapSlice';
 import exposureReducer from './slices/exposureSlice';
 import layerReducer from './slices/layerSlice'; // <-- Import your new slice
 import runsReducer from './slices/runsSlice';
+import simulationReducer from './slices/simulationSlice';
 import selectionReducer from './reducers/selectionReducer';
 import timeReducer from './timeSlice';
 
@@ -12,6 +13,7 @@ const store = configureStore({
     map: mapReducer,
     layers: layerReducer,
     runs: runsReducer,
+    simulation: simulationReducer,
     selection: selectionReducer,
     time: timeReducer,
   },
