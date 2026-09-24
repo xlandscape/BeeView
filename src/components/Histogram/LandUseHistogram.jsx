@@ -1,21 +1,31 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import * as d3 from 'd3';
-import * as turf from '@turf/turf';
-import { selectFeature } from '../../store/actions/selectionActions';
+import { select, selectAll } from 'd3-selection';
+import { scaleBand, scaleLinear } from 'd3-scale';
+import { axisLeft, axisBottom } from 'd3-axis';
+import { max } from 'd3-array';
+import { format } from 'd3-format';
+import { selectMultipleFeatures } from '../../store/reducers/selectionReducer';
 import { getLevel1LandUseColor, getLevel2LandUseColor, getLevel3LandUseColor, getVegetationColor } from '../../utils/colorScales';
-import { analyzeLandUseData } from '../../utils/landUseAnalysis';
+
+// Helper function to abbreviate long labels
+const abbreviateLabel = (label, maxLength = 30) => {
+  if (label.length <= maxLength) return label;
+  return label.substring(0, maxLength - 3) + '...';
+};
 
 // Individual Histogram Component
 function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick }) {
   const svgRef = useRef(null);
   const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
+  const selectedSet = useMemo(() => new Set(selectedFeatureIds), [selectedFeatureIds]);
 
+  // Build the chart only when the data changes.
   useEffect(() => {
     if (!data || data.length === 0 || !svgRef.current) return;
 
     // Clear previous chart
-    d3.select(svgRef.current).selectAll("*").remove();
+    select(svgRef.current).selectAll("*").remove();
 
     // Set up dimensions for horizontal layout
     const margin = { top: 20, right: 60, bottom: 30, left: 150 }; // Increased left margin for labels
@@ -23,34 +33,28 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
     const chartHeight = height - margin.top - margin.bottom;
 
     // Create SVG
-    const svg = d3.select(svgRef.current)
+    const svg = select(svgRef.current)
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Helper function to abbreviate long labels
-    const abbreviateLabel = (label, maxLength = 30) => {
-      if (label.length <= maxLength) return label;
-      return label.substring(0, maxLength - 3) + '...';
-    };
-
     // Set up scales - SWAPPED for horizontal layout
-    const y = d3.scaleBand()
+    const y = scaleBand()
       .domain(data.map(d => d.type))
       .range([0, chartHeight])
       .padding(0.1);
 
-    const maxArea = d3.max(data, d => d.area);
-    const x = d3.scaleLinear()
+    const maxArea = max(data, d => d.area);
+    const x = scaleLinear()
       .domain([0, maxArea])
       .range([0, width]);
 
     // Draw axes with only two ticks: 0 and maximum
     svg.append("g")
       .attr("transform", `translate(0,${chartHeight})`)
-      .call(d3.axisBottom(x).tickValues([0, maxArea]).tickFormat(d3.format(".1f")));
+      .call(axisBottom(x).tickValues([0, maxArea]).tickFormat(format(".1f")));
 
     svg.append("g")
-      .call(d3.axisLeft(y))
+      .call(axisLeft(y))
       .selectAll("text")
       .style("font-size", "11px")
       .style("text-anchor", "end")
@@ -63,9 +67,6 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
       .attr("y", chartHeight + margin.bottom - 5)
       .style("font-size", "12px")
       .text("Area (Hectares)");
-
-    // Check if any features are selected
-    const hasSelection = selectedFeatureIds.length > 0;
 
     // Draw horizontal bars
     svg.selectAll(".bar")
@@ -84,18 +85,11 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
       .attr("stroke", "#333")
       .attr("stroke-width", 0.5)
       .style("cursor", "pointer")
-      .attr("opacity", d => {
-        if (!hasSelection) return 1; // No selection, show all at full opacity
-        
-        // Check if this category has any selected features
-        const hasSelectedFeatures = d.featureIds.some(id => selectedFeatureIds.includes(id));
-        return hasSelectedFeatures ? 1 : 0.3; // Selected: full opacity, others: dimmed
-      })
       .on("mouseover", function(event, d) {
-        d3.select(this).style("filter", "brightness(1.1)");
-        
+        select(this).style("filter", "brightness(1.1)");
+
         // Tooltip
-        const tooltip = d3.select("body").append("div")
+        select("body").append("div")
           .attr("class", "histogram-tooltip")
           .style("position", "absolute")
           .style("background", "rgba(0,0,0,0.8)")
@@ -113,8 +107,8 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
           `);
       })
       .on("mouseout", function() {
-        d3.select(this).style("filter", "none");
-        d3.selectAll(".histogram-tooltip").remove();
+        select(this).style("filter", "none");
+        selectAll(".histogram-tooltip").remove();
       })
       .on("click", (event, d) => {
         if (onBarClick) {
@@ -122,7 +116,20 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
         }
       });
 
-  }, [data, colorFunction, height, onBarClick, selectedFeatureIds]);
+  }, [data, colorFunction, height, onBarClick]);
+
+  // Selection only changes bar opacity, so update that in place.
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const hasSelection = selectedSet.size > 0;
+    select(svgRef.current).selectAll(".bar")
+      .attr("opacity", d => {
+        if (!hasSelection) return 1; // No selection, show all at full opacity
+        // Check if this category has any selected features
+        const hasSelectedFeatures = d.featureIds.some(id => selectedSet.has(id));
+        return hasSelectedFeatures ? 1 : 0.3; // Selected: full opacity, others: dimmed
+      });
+  }, [selectedSet, data]);
 
   return (
     <div style={{ marginBottom: '20px' }}>
@@ -132,79 +139,90 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
   );
 }
 
-function LandUseHistogram() {
-  const landUseData = useSelector(state => state.map.landUseData);
-  const vegetationCodesMap = useSelector(state => state.map.vegetationCodesMap);
-  const activeFilters = useSelector(state => state.map.activeL1Filters);
+// Aggregate feature areas per category for one level (top 20 by area).
+function prepareHistogramData(features, level, vegetationCodesMap) {
+  if (!features) return [];
 
-  // Add verification console log
-  useEffect(() => {
-    console.log('LandUseHistogram: vegetationCodesMap keys count:', vegetationCodesMap ? Object.keys(vegetationCodesMap).length : 0);
-  }, [vegetationCodesMap]);
+  const aggregatedData = {};
+
+  features.forEach(feature => {
+    const props = feature.properties;
+    let key;
+
+    if (level === 'L1') {
+      key = props.L1_label || 'Unknown';
+    } else if (level === 'L2') {
+      key = props.L2_label || 'Unknown';
+    } else if (level === 'L3') {
+      key = props.L3_label || 'Unknown';
+    } else if (level === 'vegetation') {
+      // Use vegetation mapping - match map component logic with new format
+      const featureId = feature.id;
+      const vegetationInfo = featureId && vegetationCodesMap ? vegetationCodesMap[featureId] : null;
+      if (!vegetationInfo) {
+        key = 'No Vegetation Data';
+      } else {
+        key = vegetationInfo.vegetation_name || 'Unknown Vegetation';
+      }
+    }
+
+    // Use actual area from feature properties (in hectares)
+    const area = parseFloat(props.area_hectares) || 0;
+
+    if (!aggregatedData[key]) {
+      aggregatedData[key] = {
+        type: key,
+        area: 0,
+        featureIds: []
+      };
+    }
+
+    aggregatedData[key].area += area;
+    aggregatedData[key].featureIds.push(feature.id);
+  });
+
+  return Object.values(aggregatedData)
+    .sort((a, b) => b.area - a.area)
+    .slice(0, 20); // Limit to top 20 for readability
+}
+
+function LandUseHistogram() {
+  const features = useSelector(state => state.map.landUseData?.features ?? null);
+  const vegetationCodesMap = useSelector(state => state.map.vegetationCodesMap);
+  const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
   const dispatch = useDispatch();
 
-  // Prepare data for different levels
-  const prepareHistogramData = (level) => {
-    if (!landUseData || !landUseData.features) return [];
+  // Keep the latest selection in a ref so the click handler stays stable
+  // (a changing handler would force every histogram to rebuild its SVG).
+  const selectedRef = useRef(selectedFeatureIds);
+  selectedRef.current = selectedFeatureIds;
 
-    const aggregatedData = {};
-    
-    landUseData.features.forEach(feature => {
-      const props = feature.properties;
-      let key;
-      
-      if (level === 'L1') {
-        key = props.L1_label || 'Unknown';
-      } else if (level === 'L2') {
-        key = props.L2_label || 'Unknown';
-      } else if (level === 'L3') {
-        key = props.L3_label || 'Unknown';
-      } else if (level === 'vegetation') {
-        // Use vegetation mapping - match map component logic with new format
-        const featureId = feature.id;
+  // Clicking a bar toggles its whole category in one dispatch: if every
+  // feature of the category is already selected, deselect them; otherwise
+  // add the missing ones.
+  const handleBarClick = useCallback((d) => {
+    const next = new Set(selectedRef.current);
+    const allSelected = d.featureIds.every(id => next.has(id));
+    if (allSelected) {
+      d.featureIds.forEach(id => next.delete(id));
+    } else {
+      d.featureIds.forEach(id => next.add(id));
+    }
+    dispatch(selectMultipleFeatures(Array.from(next)));
+  }, [dispatch]);
 
-        if (!featureId || !vegetationCodesMap || !vegetationCodesMap[featureId]) {
-          key = 'No Vegetation Data';
-        } else {
-          const vegetationInfo = vegetationCodesMap[featureId];
-          const vegetationType = vegetationInfo.vegetation_name;
-          key = vegetationType || 'Unknown Vegetation';
-        }
-      }
-
-      // Use actual area from feature properties (in hectares)
-      const area = parseFloat(props.area_hectares) || 0;
-
-      if (!aggregatedData[key]) {
-        aggregatedData[key] = {
-          type: key,
-          area: 0,
-          featureIds: []
-        };
-      }
-
-      aggregatedData[key].area += area;
-      aggregatedData[key].featureIds.push(feature.id);
-    });
-
-    return Object.values(aggregatedData)
-      .sort((a, b) => b.area - a.area)
-      .slice(0, 20); // Limit to top 20 for readability
-  };
-
-  const handleBarClick = (d) => {
-    d.featureIds.forEach(id => dispatch(selectFeature(id)));
-  };
-
-  const l1Data = prepareHistogramData('L1');
-  const l2Data = prepareHistogramData('L2');
-  const l3Data = prepareHistogramData('L3');
-  const vegetationData = prepareHistogramData('vegetation');
+  const l1Data = useMemo(() => prepareHistogramData(features, 'L1'), [features]);
+  const l2Data = useMemo(() => prepareHistogramData(features, 'L2'), [features]);
+  const l3Data = useMemo(() => prepareHistogramData(features, 'L3'), [features]);
+  const vegetationData = useMemo(
+    () => prepareHistogramData(features, 'vegetation', vegetationCodesMap),
+    [features, vegetationCodesMap]
+  );
 
   return (
-    <div style={{ 
-      background: 'white', 
-      borderRadius: '8px', 
+    <div style={{
+      background: 'white',
+      borderRadius: '8px',
       padding: '20px',
       boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
       margin: '10px'
@@ -214,7 +232,7 @@ function LandUseHistogram() {
         Click bars to select features on the map. Selected features will be highlighted with full opacity while others are dimmed. Showing top 20 categories by total area (hectares).
       </p>
 
-      <SingleHistogram 
+      <SingleHistogram
         title="Level 1 - Major Land Use Categories"
         data={l1Data}
         colorFunction={getLevel1LandUseColor}
@@ -222,7 +240,7 @@ function LandUseHistogram() {
         onBarClick={handleBarClick}
       />
 
-      <SingleHistogram 
+      <SingleHistogram
         title="Level 2 - Detailed Land Use Categories"
         data={l2Data}
         colorFunction={getLevel2LandUseColor}
@@ -230,7 +248,7 @@ function LandUseHistogram() {
         onBarClick={handleBarClick}
       />
 
-      <SingleHistogram 
+      <SingleHistogram
         title="Level 3 - Specific Land Use Categories"
         data={l3Data}
         colorFunction={getLevel3LandUseColor}
@@ -238,13 +256,10 @@ function LandUseHistogram() {
         onBarClick={handleBarClick}
       />
 
-      <SingleHistogram 
+      <SingleHistogram
         title="Vegetation Types"
         data={vegetationData}
-        colorFunction={(type) => {
-          // Use the same color function as the vegetation layer in the map
-          return getVegetationColor(type);
-        }}
+        colorFunction={getVegetationColor}
         height={240}
         onBarClick={handleBarClick}
       />

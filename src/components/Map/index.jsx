@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setLandUseData, setNectarMax, setBeePopulationData, setBeePopulationMetrics, setVegetationCodesMap } from '../../store/slices/mapSlice';
+import { setLandUseData, setNectarMax, setBeePopulationMetrics, setVegetationCodesMap } from '../../store/slices/mapSlice';
 import {Map as MapLibre, NavigationControl, useControl} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
 import {GeoJsonLayer, ScatterplotLayer, TextLayer} from '@deck.gl/layers';
@@ -9,7 +9,7 @@ import { getLandUseColor, getNectarColor, getPollenColor, getVegetationColor } f
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { selectFeature, clearSelection } from '../../store/reducers/selectionReducer';
 import { setHivePosition } from '../../store/slices/simulationSlice';
-import { loadViewportData, loadTimePointData, loadBeePopulationData, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig, isFullDatasetCached } from '../../utils/viewportLoader';
+import { loadViewportData, loadTimePointData, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig } from '../../utils/viewportLoader';
 import { loadApplicationsData } from '../../utils/applicationsLoader';
 import { buildApiUrl } from '../../config/api';
 
@@ -86,7 +86,6 @@ function Map() {
   const [pollenMax, setPollenData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [beePopulationData, setBeePopulationDataState] = useState(null);
   const [vegetationMapping, setVegetationMapping] = useState(null);
   const [applicationsData, setApplicationsData] = useState([]);
   const [debugMode, setDebugMode] = useState(false); // 🐛 Debug mode toggle
@@ -98,7 +97,6 @@ function Map() {
   const lastZoomRef = useRef(INITIAL_VIEW_STATE.zoom);
   const [hiveMarkerRadius, setHiveMarkerRadius] = useState(() => getHiveMarkerRadiusPixels(INITIAL_VIEW_STATE.zoom));
   const lastProcessedTimePoint = useRef(null);
-  const beePopulationRequestId = useRef(0);
 
   const activeFilters = useSelector((state) => state.map.activeL1Filters);
   const lulcVisible = useSelector((state) => state.layers.LULC?.visible);
@@ -271,38 +269,24 @@ function Map() {
     loadVegetationMapping();
   }, [dispatch]);
 
-  // Load time-specific data when selected time point changes.
-  // Cached days are applied immediately; uncached days are debounced so
-  // scrubbing through the timeline does not fire a request per step.
+  // Load time-specific data when selected time point changes. With the full
+  // dataset, day values come from the in-memory forage matrices, so apply
+  // immediately; viewport mode still debounces its per-day requests.
   useEffect(() => {
     if (!selectedTimePoint || selectedTimePoint === lastProcessedTimePoint.current) {
       return;
     }
     lastProcessedTimePoint.current = selectedTimePoint;
-    const config = getViewportConfig();
-    if (!config.USE_VIEWPORT_QUERIES && config.ENABLE_CACHING && isFullDatasetCached(selectedTimePoint)) {
+    if (!getViewportConfig().USE_VIEWPORT_QUERIES) {
       loadAndApplyTimePointData(selectedTimePoint);
     } else {
       debouncedLoadTimePointData(selectedTimePoint);
     }
   }, [selectedTimePoint, loadAndApplyTimePointData, debouncedLoadTimePointData]);
 
-  // Load bee population data when selected time point changes (latest request wins)
-  useEffect(() => {
-    if (!selectedTimePoint) return;
-    const requestId = ++beePopulationRequestId.current;
-    const loadBeeData = async () => {
-      try {
-        const data = await loadBeePopulationData(selectedTimePoint);
-        if (requestId !== beePopulationRequestId.current) return;
-        setBeePopulationDataState(data);
-        dispatch(setBeePopulationData(data));
-      } catch (error) {
-        console.error('Failed to load bee population data:', error);
-      }
-    };
-    loadBeeData();
-  }, [selectedTimePoint, dispatch]);
+  // Note: the per-day bee population fetch that used to live here was removed.
+  // Colony metrics have no spatial resolution and nothing on the map reads
+  // them; the charts load their own series. It cost one request per time step.
 
   // Load bee population metrics on mount. (The full population time series
   // used to be fetched here too, but nothing on the map consumed it; the
@@ -409,7 +393,7 @@ function Map() {
   // Snapshot of state for the debug console output, so the click handler
   // does not have to be recreated (and every layer re-diffed) whenever data changes.
   const debugSnapshotRef = useRef(null);
-  debugSnapshotRef.current = { selectedTimePoint, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, beePopulationData, vegetationMapping };
+  debugSnapshotRef.current = { selectedTimePoint, activeFilters, selectedFeatureIds, geoJsonData, nectarMax, pollenMax, vegetationMapping };
 
   // Enhanced click handler with comprehensive debugging
   const handleFeatureClick = useCallback(async (info) => {
@@ -446,7 +430,6 @@ function Map() {
         console.log('  - GeoJSON Data:', !!snap.geoJsonData);
         console.log('  - Nectar Max Data:', !!snap.nectarMax);
         console.log('  - Pollen Max Data:', !!snap.pollenMax);
-        console.log('  - Bee Population Data:', !!snap.beePopulationData);
         console.log('  - Vegetation Mapping:', !!snap.vegetationMapping);
 
         // Try to fetch detailed data for this feature

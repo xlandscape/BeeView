@@ -3,6 +3,7 @@
  */
 
 import { API_BASE_URL, buildApiUrl } from '../config/api.js';
+import { loadForageMatrix, getLoadedForageMatrix } from './forageMatrix.js';
 
 // Configuration options
 const VIEWPORT_CONFIG = {
@@ -168,42 +169,8 @@ export async function loadViewportNectarMax(viewState, options = {}) {
   
   // If viewport queries are disabled, load full dataset
   if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
-    console.log('Viewport queries disabled - loading full nectar dataset');
-    const cacheKey = 'full_nectar';
-    
-    if (useCache) {
-      const cached = viewportCache.get(cacheKey);
-      if (cached) {
-        console.log('Using cached full nectar data');
-        return cached;
-      }
-    }
-    
-    try {
-      const response = await fetch(`${API_BASE_URL}/nectar/max`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // Convert to lookup object
-      const nectarMaxLookup = {};
-      data["max_nectar"].forEach(item => {
-        nectarMaxLookup[item.feature_id] = item.max_nectar;
-      });
-      
-      if (useCache) {
-        viewportCache.set(cacheKey, nectarMaxLookup);
-      }
-      
-      console.log(`Loaded full nectar dataset: ${Object.keys(nectarMaxLookup).length} features`);
-      return nectarMaxLookup;
-      
-    } catch (error) {
-      console.error('Error loading full nectar dataset:', error);
-      throw error;
-    }
+    // Full dataset: answered locally from the downloaded forage matrices.
+    return (await loadForageMatrix()).maxValues('nectar');
   }
   
   // Original viewport-based loading
@@ -263,42 +230,8 @@ export async function loadViewportPollenMax(viewState, options = {}) {
   
   // If viewport queries are disabled, load full dataset
   if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
-    console.log('Viewport queries disabled - loading full pollen dataset');
-    const cacheKey = 'full_pollen';
-    
-    if (useCache) {
-      const cached = viewportCache.get(cacheKey);
-      if (cached) {
-        console.log('Using cached full pollen data');
-        return cached;
-      }
-    }
-    
-    try {
-      const response = await fetch(`${API_BASE_URL}/pollen/max`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // Convert to lookup object
-      const pollenMaxLookup = {};
-      data["max_pollen"].forEach(item => {
-        pollenMaxLookup[item.feature_id] = item.max_pollen;
-      });
-      
-      if (useCache) {
-        viewportCache.set(cacheKey, pollenMaxLookup);
-      }
-      
-      console.log(`Loaded full pollen dataset: ${Object.keys(pollenMaxLookup).length} features`);
-      return pollenMaxLookup;
-      
-    } catch (error) {
-      console.error('Error loading full pollen dataset:', error);
-      throw error;
-    }
+    // Full dataset: answered locally from the downloaded forage matrices.
+    return (await loadForageMatrix()).maxValues('pollen');
   }
   
   // Original viewport-based loading
@@ -391,22 +324,12 @@ export function getViewportConfig() {
  * Check if full dataset is cached for a given time point
  */
 export function isFullDatasetCached(timePoint = null) {
-  // If caching is disabled, always return false
   if (!VIEWPORT_CONFIG.ENABLE_CACHING) {
     return false;
   }
-  
-  const hasGeoJson = viewportCache.get('full_geojson') !== null;
-  
-  if (timePoint) {
-    const hasNectar = viewportCache.get(`full_nectar_${timePoint}`) !== null;
-    const hasPollen = viewportCache.get(`full_pollen_${timePoint}`) !== null;
-    return hasGeoJson && hasNectar && hasPollen;
-  } else {
-    const hasNectar = viewportCache.get('full_nectar') !== null;
-    const hasPollen = viewportCache.get('full_pollen') !== null;
-    return hasGeoJson && hasNectar && hasPollen;
-  }
+  // Nectar/pollen for any time point are answered from the in-memory forage
+  // matrices once they are loaded; only the GeoJSON needs its own cache entry.
+  return viewportCache.get('full_geojson') !== null && getLoadedForageMatrix() !== null;
 }
 
 /**
@@ -461,42 +384,8 @@ export async function loadTimePointNectarData(viewState, timePoint, options = {}
   
   // If viewport queries are disabled, load full dataset for time point
   if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
-    console.log(`Viewport queries disabled - loading full nectar dataset for time point: ${timePoint}`);
-    const cacheKey = `full_nectar_${timePoint}`;
-    
-    if (useCache) {
-      const cached = viewportCache.get(cacheKey);
-      if (cached) {
-        console.log(`Using cached full nectar data for time point: ${timePoint}`);
-        return cached;
-      }
-    }
-    
-    try {
-      const response = await fetch(buildApiUrl(`/api/nectar/time-point/${timePoint}`));
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // Convert to lookup object
-      const nectarTimeLookup = {};
-      data.nectar_data.forEach(item => {
-        nectarTimeLookup[item.feature_id] = item.nectar_concentration;
-      });
-      
-      if (useCache) {
-        viewportCache.set(cacheKey, nectarTimeLookup);
-      }
-      
-      console.log(`Loaded full nectar data for time point ${timePoint}: ${Object.keys(nectarTimeLookup).length} features`);
-      return nectarTimeLookup;
-      
-    } catch (error) {
-      console.error(`Error loading full nectar dataset for time point ${timePoint}:`, error);
-      throw error;
-    }
+    // Full dataset: answered locally from the downloaded forage matrices.
+    return (await loadForageMatrix()).dayValues('nectar', timePoint);
   }
   
   // Viewport-based loading for specific time point
@@ -556,42 +445,8 @@ export async function loadTimePointPollenData(viewState, timePoint, options = {}
   
   // If viewport queries are disabled, load full dataset for time point
   if (!VIEWPORT_CONFIG.USE_VIEWPORT_QUERIES) {
-    console.log(`Viewport queries disabled - loading full pollen dataset for time point: ${timePoint}`);
-    const cacheKey = `full_pollen_${timePoint}`;
-    
-    if (useCache) {
-      const cached = viewportCache.get(cacheKey);
-      if (cached) {
-        console.log(`Using cached full pollen data for time point: ${timePoint}`);
-        return cached;
-      }
-    }
-    
-    try {
-      const response = await fetch(buildApiUrl(`/api/pollen/time-point/${timePoint}`));
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // Convert to lookup object
-      const pollenTimeLookup = {};
-      data.pollen_data.forEach(item => {
-        pollenTimeLookup[item.feature_id] = item.pollen_concentration;
-      });
-      
-      if (useCache) {
-        viewportCache.set(cacheKey, pollenTimeLookup);
-      }
-      
-      console.log(`Loaded full pollen data for time point ${timePoint}: ${Object.keys(pollenTimeLookup).length} features`);
-      return pollenTimeLookup;
-      
-    } catch (error) {
-      console.error(`Error loading full pollen dataset for time point ${timePoint}:`, error);
-      throw error;
-    }
+    // Full dataset: answered locally from the downloaded forage matrices.
+    return (await loadForageMatrix()).dayValues('pollen', timePoint);
   }
   
   // Viewport-based loading for specific time point

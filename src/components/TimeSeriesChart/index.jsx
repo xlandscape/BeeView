@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedTimePoint, setAvailableTimePoints } from '../../store/timeSlice';
 import { clearSelection } from '../../store/reducers/selectionReducer';
 import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
+import { loadForageMatrix } from '../../utils/forageMatrix';
 import { buildApiUrl } from '../../config/api';
 import { RUN_COLOR_PALETTE } from '../../store/slices/runsSlice';
 import {
@@ -11,7 +12,10 @@ import {
   fetchExposureTimeseries,
 } from '../../store/thunks/exposureThunks';
 import TrellisTimeSeriesChart from '../TrellisTimeSeriesChart';
-import CompareChart from '../CompareChart';
+// Only needed on the compare tab; keep it out of the initial bundle.
+const CompareChart = lazy(() => import('../CompareChart'));
+
+const EMPTY_APPLICATIONS = [];
 
 const DERIVED_BEE_METRICS = {
   'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae': [
@@ -65,37 +69,39 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     beePopulationData?.timeseries?.length || 0,
     365,
   );
-  const effectiveRunIds = viewRunIds.length > 0 ? viewRunIds : [null];
-  const exposureRunIds = viewRunIds.length > 0 ? viewRunIds : [];
+  const effectiveRunIds = useMemo(() => (viewRunIds.length > 0 ? viewRunIds : [null]), [viewRunIds]);
+  const exposureRunIds = useMemo(() => (viewRunIds.length > 0 ? viewRunIds : []), [viewRunIds]);
 
   const fetchAverageData = useCallback(async () => {
-    setIsLoading(true);
     setError(null);
-    
+
     try {
-      let url = buildApiUrl('/api/timeseries/averages?include_nectar=true&include_pollen=true');
-      
-      // If features are selected, add them to the query
-      if (selectedFeatureIds.length > 0) {
-        const featureIdsStr = selectedFeatureIds.join(',');
-        url += `&feature_ids=${featureIdsStr}`;
+      let averages;
+      try {
+        // Daily averages are computed locally from the downloaded forage
+        // matrices, so changing the selection costs no request.
+        const matrix = await loadForageMatrix();
+        averages = matrix.averages(selectedFeatureIds);
+      } catch (matrixError) {
+        console.warn('Forage matrices unavailable, falling back to /api/timeseries/averages:', matrixError);
+        setIsLoading(true);
+        let url = buildApiUrl('/api/timeseries/averages?include_nectar=true&include_pollen=true');
+        if (selectedFeatureIds.length > 0) {
+          url += `&feature_ids=${selectedFeatureIds.join(',')}`;
+        }
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        averages = data.averages || [];
       }
-      // If no features selected, the API will return average across ALL features
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      setAverageData(data.averages || []);
-      
+
+      setAverageData(averages);
+
       // Set available time points using the current data horizon.
-      const inferredDays = Math.max(data?.averages?.length || 0, 365);
-      const timePoints = Array.from({ length: inferredDays }, (_, i) => i + 1);
-      dispatch(setAvailableTimePoints(timePoints));
-      
+      const inferredDays = Math.max(averages.length, 365);
+      dispatch(setAvailableTimePoints(Array.from({ length: inferredDays }, (_, i) => i + 1)));
     } catch (err) {
       setError(err.message);
       console.error('Error fetching average time series data:', err);
@@ -320,11 +326,76 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     });
   }, [effectiveRunIds, getExposureRequest, getRunLabel]);
 
-  const applicationTimelineData = getApplicationTimelineData();
-  const exposureRequestEntries = effectiveRunIds.map(runId => ({
+  const applicationTimelineData = useMemo(() => getApplicationTimelineData(), [getApplicationTimelineData]);
+  const exposureRequestEntries = useMemo(() => effectiveRunIds.map(runId => ({
     runId,
     request: getExposureRequest(runId),
-  }));
+  })), [effectiveRunIds, getExposureRequest]);
+
+  const nectarVisible = layers.Nectar?.visible;
+  const pollenVisible = layers.Pollen?.visible;
+  const nectarPollenSeriesData = useMemo(() => {
+    const seriesData = [];
+    if (nectarVisible) {
+      seriesData.push({
+        data: averageData,
+        dataKey: "nectar_avg",
+        title: "Total Nectar Availability",
+        color: "#2563eb",
+        yAxisLabel: "Total Nectar Availability"
+      });
+    }
+    if (pollenVisible) {
+      seriesData.push({
+        data: averageData,
+        dataKey: "pollen_avg",
+        title: "Total Pollen Availability",
+        color: "#dc2626",
+        yAxisLabel: "Total Pollen Availability"
+      });
+    }
+    return seriesData;
+  }, [averageData, nectarVisible, pollenVisible]);
+
+  const beeSeriesData = useMemo(() => {
+    const buildSeries = (layerKey, metric, title, color, yAxisLabel) => {
+      if (!layers[layerKey]?.visible) return null;
+      const lines = beeLineScope === 'hive_mean'
+        ? getHiveMeanLines(metric)
+        : getMultiRunLines(metric);
+      if (!lines) return null;
+      return { title, color, yAxisLabel, lines };
+    };
+    return [
+      buildSeries(
+        'TotalColony',
+        'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae',
+        'Total Colony Size',
+        '#1b9e77',
+        'Total Population'
+      ),
+      buildSeries('TotalAdults', 'TotalIHbees + TotalForagers', 'Adults (Workers)', '#d95f02', 'Number of Adult Bees'),
+      buildSeries('AllEggs', 'TotalDroneEggs + TotalEggs', 'All Eggs', '#7570b3', 'Number of Eggs'),
+      buildSeries('AllLarvae', 'TotalDroneLarvae + TotalLarvae', 'All Larvae', '#e7298a', 'Number of Larvae'),
+      buildSeries('AllPupae', 'TotalDronePupae + TotalPupae', 'All Pupae', '#66a61e', 'Number of Pupae'),
+    ].filter(Boolean);
+  }, [layers, beeLineScope, getHiveMeanLines, getMultiRunLines]);
+
+  const exposureSeriesData = useMemo(() => {
+    const lineBuilder = exposureLineScope === 'hive_mean'
+      ? getExposureHiveMeanLines
+      : getExposureLines;
+    return [
+      { lines: lineBuilder('nectar_exposure'), title: "Nectar Exposure", color: "#2563eb", yAxisLabel: "Nectar Exposure" },
+      { lines: lineBuilder('pollen_exposure'), title: "Pollen Exposure", color: "#dc2626", yAxisLabel: "Pollen Exposure" },
+      { lines: lineBuilder('contact_exposure'), title: "Contact Exposure", color: "#059669", yAxisLabel: "Contact Exposure" },
+    ].filter(series => series.lines && series.lines.length > 0);
+  }, [exposureLineScope, getExposureHiveMeanLines, getExposureLines]);
+
+  const beeStartDate = useMemo(
+    () => availableRuns.find(r => r.id === viewRunIds[0])?.sim_start || null,
+    [availableRuns, viewRunIds]
+  );
   const exposureRequestError = exposureRequestEntries
     .map(({ request }) => request?.exposureError || request?.applicationsError)
     .find(Boolean);
@@ -418,7 +489,9 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     return (
       <div className="timeseries-container">
         <div className="mb-6">
-          <CompareChart />
+          <Suspense fallback={<div className="text-gray-500">Loading comparison view...</div>}>
+            <CompareChart />
+          </Suspense>
         </div>
       </div>
     );
@@ -501,27 +574,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       {activeTab === 'nectar-pollen' && (
         <div className="mb-6">
           {(() => {
-            const seriesData = [];
-            
-            if (layers.Nectar?.visible) {
-              seriesData.push({
-                data: averageData,
-                dataKey: "nectar_avg",
-                title: "Total Nectar Availability",
-                color: "#2563eb",
-                yAxisLabel: "Total Nectar Availability"
-              });
-            }
-            
-            if (layers.Pollen?.visible) {
-              seriesData.push({
-                data: averageData,
-                dataKey: "pollen_avg",
-                title: "Total Pollen Availability",
-                color: "#dc2626",
-                yAxisLabel: "Total Pollen Availability"
-              });
-            }
+            const seriesData = nectarPollenSeriesData;
             
             return seriesData.length > 0 ? (
               <TrellisTimeSeriesChart
@@ -578,52 +631,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
                 </div>
               );
             }
-            const buildSeries = (layerKey, metric, title, color, yAxisLabel) => {
-              if (!layers[layerKey]?.visible) return null;
-              const lines = beeLineScope === 'hive_mean'
-                ? getHiveMeanLines(metric)
-                : getMultiRunLines(metric);
-              if (!lines) return null;
-              return { title, color, yAxisLabel, lines };
-            };
-
-            const seriesData = [
-              buildSeries(
-                'TotalColony',
-                'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae',
-                'Total Colony Size',
-                '#1b9e77',
-                'Total Population'
-              ),
-              buildSeries(
-                'TotalAdults',
-                'TotalIHbees + TotalForagers',
-                'Adults (Workers)',
-                '#d95f02',
-                'Number of Adult Bees'
-              ),
-              buildSeries(
-                'AllEggs',
-                'TotalDroneEggs + TotalEggs',
-                'All Eggs',
-                '#7570b3',
-                'Number of Eggs'
-              ),
-              buildSeries(
-                'AllLarvae',
-                'TotalDroneLarvae + TotalLarvae',
-                'All Larvae',
-                '#e7298a',
-                'Number of Larvae'
-              ),
-              buildSeries(
-                'AllPupae',
-                'TotalDronePupae + TotalPupae',
-                'All Pupae',
-                '#66a61e',
-                'Number of Pupae'
-              ),
-            ].filter(Boolean);
+            const seriesData = beeSeriesData;
 
             if (seriesData.length === 0) {
               return (
@@ -641,9 +649,9 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
                 </div>
                 <TrellisTimeSeriesChart
                   seriesData={seriesData}
-                  applicationData={[]}
+                  applicationData={EMPTY_APPLICATIONS}
                   height={500}
-                  startDate={availableRuns.find(r => r.id === viewRunIds[0])?.sim_start || null}
+                  startDate={beeStartDate}
                 />
               </>
             );
@@ -692,32 +700,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
               );
             }
 
-            const lineBuilder = exposureLineScope === 'hive_mean'
-              ? getExposureHiveMeanLines
-              : getExposureLines;
-            const nectarLines = lineBuilder('nectar_exposure');
-            const pollenLines = lineBuilder('pollen_exposure');
-            const contactLines = lineBuilder('contact_exposure');
-            const seriesData = [
-              {
-                lines: nectarLines,
-                title: "Nectar Exposure",
-                color: "#2563eb",
-                yAxisLabel: "Nectar Exposure"
-              },
-              {
-                lines: pollenLines,
-                title: "Pollen Exposure", 
-                color: "#dc2626",
-                yAxisLabel: "Pollen Exposure"
-              },
-              {
-                lines: contactLines,
-                title: "Contact Exposure",
-                color: "#059669",
-                yAxisLabel: "Contact Exposure"
-              }
-            ].filter(series => series.lines && series.lines.length > 0);
+            const seriesData = exposureSeriesData;
             
             if (isExposureLoading && seriesData.length === 0) {
               return (

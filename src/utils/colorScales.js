@@ -1,4 +1,4 @@
-import * as d3 from 'd3';
+import { scaleLinear } from 'd3-scale';
 
 // Land use type color mapping - Level 1 (broad categories)
 const level1LandUseColors = {
@@ -396,7 +396,7 @@ export const getPollenColor = (value) => {
 
 // Generate a color scale for continuous values
 export const generateColorScale = (domain, colorRange) => {
-  return d3.scaleLinear()
+  return scaleLinear()
     .domain(domain)
     .range(colorRange);
 };

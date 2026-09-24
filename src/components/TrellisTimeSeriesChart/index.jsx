@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import * as d3 from 'd3';
+import { select, pointer } from 'd3-selection';
+import { scaleLinear } from 'd3-scale';
+import { axisLeft, axisBottom } from 'd3-axis';
+import { line as d3Line, curveMonotoneX } from 'd3-shape';
+import { extent, group } from 'd3-array';
 import { setSelectedTimePoint } from '../../store/timeSlice';
 
-const TrellisTimeSeriesChart = ({ 
+const TrellisTimeSeriesChart = ({
   seriesData, // Array of {data, dataKey, title, color, yAxisLabel}
   height = 400,
   applicationData = [], // Application events data
@@ -11,18 +15,23 @@ const TrellisTimeSeriesChart = ({
 }) => {
   const dispatch = useDispatch();
   const svgRef = useRef();
-  const { selectedTimePoint } = useSelector(state => state.time);
+  const selectedTimePoint = useSelector(state => state.time.selectedTimePoint);
   const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, content: '' });
+  // The x-scale of the last full draw, so the time cursor can be moved
+  // without rebuilding the whole SVG on every time step.
+  const xScaleRef = useRef(null);
+  const selectedTimeRef = useRef(selectedTimePoint);
+  selectedTimeRef.current = selectedTimePoint;
 
   const drawChart = useCallback(() => {
     if (!seriesData || seriesData.length === 0) return;
 
-    const svg = d3.select(svgRef.current);
+    const svg = select(svgRef.current);
     svg.selectAll('*').remove();
 
     const margin = { top: 20, right: 80, bottom: 100, left: 80 };
     const width = 900 - margin.left - margin.right;
-    
+
     // Calculate heights for trellis panels
     const applicationTimelineHeight = 40;
     const panelHeight = (height - margin.top - margin.bottom - applicationTimelineHeight - 20) / seriesData.length;
@@ -45,9 +54,10 @@ const TrellisTimeSeriesChart = ({
     const multiYear = totalDays > 366;
 
     // Shared x-scale
-    const xScale = d3.scaleLinear()
+    const xScale = scaleLinear()
       .domain([1, totalDays])
       .range([0, width]);
+    xScaleRef.current = xScale;
 
     // Build x-axis tick descriptors
     const baseDate = startDate ? new Date(startDate + 'T00:00:00') : null;
@@ -93,6 +103,8 @@ const TrellisTimeSeriesChart = ({
       return ticks;
     };
 
+    const initialCursorDay = selectedTimeRef.current;
+
     // Create panels for each series
     seriesData.forEach((series, index) => {
       const { title, color, yAxisLabel } = series;
@@ -112,8 +124,8 @@ const TrellisTimeSeriesChart = ({
 
       // Y-scale across all lines in this panel.
       const allValues = lines.flatMap(l => (l.data || []).map(d => d[l.dataKey] || 0));
-      const yScale = d3.scaleLinear()
-        .domain(d3.extent(allValues))
+      const yScale = scaleLinear()
+        .domain(extent(allValues))
         .nice()
         .range([panelHeight, 0]);
 
@@ -136,7 +148,7 @@ const TrellisTimeSeriesChart = ({
 
       // Add y-axis (only left side)
       g.append('g')
-        .call(d3.axisLeft(yScale).ticks(4));
+        .call(axisLeft(yScale).ticks(4));
 
       // Add y-axis label
       g.append('text')
@@ -151,10 +163,10 @@ const TrellisTimeSeriesChart = ({
 
       // Draw each line in the panel.
       lines.forEach((ln) => {
-        const lineGen = d3.line()
+        const lineGen = d3Line()
           .x(d => xScale(d.day))
           .y(d => yScale(d[ln.dataKey] || 0))
-          .curve(d3.curveMonotoneX);
+          .curve(curveMonotoneX);
         g.append('path')
           .datum(ln.data)
           .attr('fill', 'none')
@@ -194,19 +206,26 @@ const TrellisTimeSeriesChart = ({
         });
       }
 
-      // Add vertical line for selected time point
-      if (selectedTimePoint) {
-        g.append('line')
-          .attr('class', 'selected-time-line')
-          .attr('x1', xScale(selectedTimePoint))
-          .attr('x2', xScale(selectedTimePoint))
-          .attr('y1', 0)
-          .attr('y2', panelHeight)
-          .attr('stroke', '#ff6b35')
-          .attr('stroke-width', 2)
-          .attr('stroke-dasharray', '4,4')
-          .attr('opacity', 0.8);
-      }
+      // Vertical line for the selected time point. Always present; positioned
+      // and shown/hidden by the cursor effect below so time changes don't redraw.
+      g.append('line')
+        .attr('class', 'selected-time-line')
+        .attr('x1', xScale(initialCursorDay || 1))
+        .attr('x2', xScale(initialCursorDay || 1))
+        .attr('y1', 0)
+        .attr('y2', panelHeight)
+        .attr('stroke', '#ff6b35')
+        .attr('stroke-width', 2)
+        .attr('stroke-dasharray', '4,4')
+        .attr('opacity', 0.8)
+        .style('display', initialCursorDay ? null : 'none');
+
+      // Day -> datum lookup per line, so hovering is O(1) instead of a scan per event.
+      const lookups = lines.map((ln) => {
+        const byDay = new Map();
+        (ln.data || []).forEach((d) => byDay.set(d.day, d));
+        return byDay;
+      });
 
       // Add interactive overlay for this panel
       g.append('rect')
@@ -217,11 +236,11 @@ const TrellisTimeSeriesChart = ({
         .style('pointer-events', 'all')
         .style('cursor', 'crosshair')
         .on('mousemove', function(event) {
-          const [mouseX] = d3.pointer(event);
+          const [mouseX] = pointer(event);
           const day = Math.round(xScale.invert(mouseX));
           const tooltipLines = lines
-            .map((ln) => {
-              const dd = ln.data?.find(d => d.day === day);
+            .map((ln, i) => {
+              const dd = lookups[i].get(day);
               if (!dd) return null;
               const v = dd[ln.dataKey] ?? 0;
               const label = ln.label || ln.dataKey;
@@ -241,7 +260,7 @@ const TrellisTimeSeriesChart = ({
           setTooltip({ show: false, x: 0, y: 0, content: '' });
         })
         .on('click', function(event) {
-          const [mouseX] = d3.pointer(event);
+          const [mouseX] = pointer(event);
           const day = Math.round(xScale.invert(mouseX));
           dispatch(setSelectedTimePoint(Math.max(1, Math.min(totalDays, day))));
         });
@@ -255,7 +274,7 @@ const TrellisTimeSeriesChart = ({
     mainG.append('g')
       .attr('transform', `translate(0, ${xAxisY})`)
       .call(
-        d3.axisBottom(xScale)
+        axisBottom(xScale)
           .tickValues(xTicks.filter(t => t.isYear || !multiYear).map(t => t.day))
           .tickFormat(() => '')
       );
@@ -317,11 +336,11 @@ const TrellisTimeSeriesChart = ({
         .text('Application Events');
 
       const applicationsByDay = Array.from(
-        d3.group(applicationData, d => d.application_day),
+        group(applicationData, d => d.application_day),
         ([day, applications]) => ({
           day: parseInt(day, 10),
           groups: Array.from(
-            d3.group(applications, d => d.run_label || 'Default scenario'),
+            group(applications, d => d.run_label || 'Default scenario'),
             ([runLabel, runApplications]) => ({
               runLabel,
               runId: runApplications[0]?.run_id ?? null,
@@ -337,28 +356,28 @@ const TrellisTimeSeriesChart = ({
         const spacing = 12;
         const startX = x - ((groups.length - 1) * spacing) / 2;
 
-        groups.forEach((group, groupIndex) => {
+        groups.forEach((grp, groupIndex) => {
           const groupX = startX + groupIndex * spacing;
-          const count = group.applications.length;
+          const count = grp.applications.length;
 
           timelineG.append('circle')
             .attr('cx', groupX)
             .attr('cy', applicationTimelineHeight / 2 + 5)
             .attr('r', Math.min(4 + Math.log(count), 10))
-            .attr('fill', group.color)
+            .attr('fill', grp.color)
             .attr('opacity', 0.85)
             .attr('stroke', '#fff')
             .attr('stroke-width', 1)
             .style('cursor', 'pointer')
             .on('mouseover', function(event) {
-              const featuresList = group.applications
+              const featuresList = grp.applications
                 .map(app => `Feature ${app.lulc_feature_id}`)
                 .join(', ');
               setTooltip({
                 show: true,
                 x: event.pageX + 10,
                 y: event.pageY - 10,
-                content: `Day ${day} • ${group.runLabel}: ${count} application(s)\n${featuresList}`
+                content: `Day ${day} • ${grp.runLabel}: ${count} application(s)\n${featuresList}`
               });
             })
             .on('mouseout', () => {
@@ -382,16 +401,28 @@ const TrellisTimeSeriesChart = ({
       });
     }
 
-  }, [seriesData, selectedTimePoint, dispatch, applicationData]);
+  }, [seriesData, height, startDate, dispatch, applicationData]);
 
   useEffect(() => {
     drawChart();
   }, [drawChart]);
 
+  // Move the time cursor in place when the selected day changes.
+  useEffect(() => {
+    const xScale = xScaleRef.current;
+    if (!xScale || !svgRef.current) return;
+    const x = selectedTimePoint ? xScale(selectedTimePoint) : 0;
+    select(svgRef.current)
+      .selectAll('.selected-time-line')
+      .attr('x1', x)
+      .attr('x2', x)
+      .style('display', selectedTimePoint ? null : 'none');
+  }, [selectedTimePoint, seriesData]);
+
   return (
     <div className="trellis-chart-container">
       <svg ref={svgRef}></svg>
-      
+
       {/* Tooltip */}
       {tooltip.show && (
         <div

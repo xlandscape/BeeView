@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import LandUseHistogram from './components/Histogram/LandUseHistogram';
 import TimeSeriesChart from './components/TimeSeriesChart';
-import SimulationPanel from './components/SimulationPanel';
+// Loaded on demand: most sessions never open the simulation panel.
+const SimulationPanel = lazy(() => import('./components/SimulationPanel'));
 import { setSelectedTimePoint } from './store/timeSlice';
 import './App.css';
 
@@ -78,7 +79,11 @@ function App() {
             <LandUseHistogram />
           </div>
         </div>
-        {simulationPanelOpen && <SimulationPanel />}
+        {simulationPanelOpen && (
+          <Suspense fallback={null}>
+            <SimulationPanel />
+          </Suspense>
+        )}
       </div>
     </div>
   );
