@@ -10,7 +10,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { selectFeature, clearSelection } from '../../store/reducers/selectionReducer';
 import { setHivePosition } from '../../store/slices/simulationSlice';
 import { loadViewportData, loadTimePointData, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig } from '../../utils/viewportLoader';
-import { loadApplicationsData } from '../../utils/applicationsLoader';
+import { fetchApplications, applicationsRequestKey } from '../../store/thunks/exposureThunks';
 import { buildApiUrl } from '../../config/api';
 
 // Disable viewport queries (for debugging)
@@ -20,6 +20,8 @@ import { buildApiUrl } from '../../config/api';
 setViewportConfig({ USE_VIEWPORT_QUERIES: false,
   ENABLE_CACHING: true  // Enable caching to prevent redundant API calls
  });
+
+const EMPTY_APPLICATIONS = [];
 
 const INITIAL_VIEW_STATE = {
   latitude: 44.029,
@@ -87,7 +89,6 @@ function Map() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [vegetationMapping, setVegetationMapping] = useState(null);
-  const [applicationsData, setApplicationsData] = useState([]);
   const [debugMode, setDebugMode] = useState(false); // 🐛 Debug mode toggle
   const [hiveHoverInfo, setHiveHoverInfo] = useState(null);
   // The map view lives in a ref: re-rendering React on every mouse move is
@@ -311,25 +312,20 @@ function Map() {
     return scenarioRunId; // fallback to compare-tab selection
   }, [viewRunIds, availableRuns, scenarioRunId]);
 
-  // Load applications data for the active treated run
+  // Applications for the active treated run come from the shared exposure
+  // store (one unfiltered request per run, also used by the time series
+  // charts), so the Map and the charts never fetch the same data twice.
+  const applicationsRequest = useSelector((state) =>
+    treatedViewRunId == null ? null : state.exposure.requests[applicationsRequestKey(treatedViewRunId)]
+  );
+  const applicationsData = applicationsRequest?.applications || EMPTY_APPLICATIONS;
+  const applicationsStatus = applicationsRequest?.applicationsStatus;
   useEffect(() => {
-    if (treatedViewRunId == null) {
-      setApplicationsData([]);
-      return;
+    if (treatedViewRunId == null) return;
+    if (!applicationsStatus || applicationsStatus === 'idle') {
+      dispatch(fetchApplications({ runId: treatedViewRunId }));
     }
-    let cancelled = false;
-    const loadApplications = async () => {
-      try {
-        const data = await loadApplicationsData([], treatedViewRunId);
-        if (!cancelled) setApplicationsData(data);
-      } catch (error) {
-        console.error('Failed to load applications data:', error);
-        if (!cancelled) setApplicationsData([]);
-      }
-    };
-    loadApplications();
-    return () => { cancelled = true; };
-  }, [treatedViewRunId]);
+  }, [treatedViewRunId, applicationsStatus, dispatch]);
 
   // Handle viewport changes
   const handleViewStateChange = useCallback((evt) => {

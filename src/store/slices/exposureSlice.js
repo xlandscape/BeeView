@@ -1,5 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import {
+  applicationsRequestKey,
   buildExposureRequestKey,
   fetchApplications,
   fetchExposureTimeseries,
@@ -62,9 +63,9 @@ const exposureSlice = createSlice({
         request.exposureTimeseries = [];
       })
       .addCase(fetchApplications.pending, (state, action) => {
-        const { runId = null, featureIds = [] } = action.meta.arg || {};
-        const requestKey = buildExposureRequestKey(runId, featureIds);
-        const request = ensureRequestState(state, requestKey, runId, featureIds);
+        const { runId = null } = action.meta.arg || {};
+        const requestKey = applicationsRequestKey(runId);
+        const request = ensureRequestState(state, requestKey, runId, []);
         request.applicationsStatus = 'loading';
         request.applicationsError = null;
       })
@@ -79,7 +80,7 @@ const exposureSlice = createSlice({
       })
       .addCase(fetchApplications.rejected, (state, action) => {
         const payload = action.payload || {};
-        const { runId = null, featureIds = [], requestKey = buildExposureRequestKey(runId, featureIds) } = payload;
+        const { runId = null, featureIds = [], requestKey = applicationsRequestKey(runId) } = payload;
         const request = ensureRequestState(state, requestKey, runId, featureIds);
         request.applicationsStatus = 'failed';
         request.applicationsError = payload.message || action.error?.message || 'Failed to fetch applications';

@@ -8,6 +8,7 @@ import { buildApiUrl } from '../../config/api';
 import { RUN_COLOR_PALETTE } from '../../store/slices/runsSlice';
 import {
   buildExposureRequestKey,
+  applicationsRequestKey,
   fetchApplications,
   fetchExposureTimeseries,
 } from '../../store/thunks/exposureThunks';
@@ -241,6 +242,17 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     return exposureRequests[requestKey] || null;
   }, [exposureRequests, selectedFeatureIds]);
 
+  // Applications are cached unfiltered per run (shared with the Map overlay)
+  // and narrowed to the current selection here.
+  const getApplicationsRequest = useCallback(
+    (runId) => exposureRequests[applicationsRequestKey(runId)] || null,
+    [exposureRequests]
+  );
+  const selectedFeatureIdSet = useMemo(
+    () => new Set(selectedFeatureIds.map(Number)),
+    [selectedFeatureIds]
+  );
+
   const getExposureLines = useCallback((metricName) => {
     const lines = exposureRunIds
       .map((runId, idx) => {
@@ -313,8 +325,13 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
 
   const getApplicationTimelineData = useCallback(() => {
     return effectiveRunIds.flatMap((runId, idx) => {
-      const request = getExposureRequest(runId);
-      const applications = request?.applications || [];
+      const request = getApplicationsRequest(runId);
+      let applications = request?.applications || [];
+      if (selectedFeatureIdSet.size > 0) {
+        applications = applications.filter((application) =>
+          selectedFeatureIdSet.has(Number(application.lulc_feature_id))
+        );
+      }
       const color = RUN_COLOR_PALETTE[idx % RUN_COLOR_PALETTE.length];
       const runLabel = getRunLabel(runId);
       return applications.map((application) => ({
@@ -324,13 +341,14 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         color,
       }));
     });
-  }, [effectiveRunIds, getExposureRequest, getRunLabel]);
+  }, [effectiveRunIds, getApplicationsRequest, selectedFeatureIdSet, getRunLabel]);
 
   const applicationTimelineData = useMemo(() => getApplicationTimelineData(), [getApplicationTimelineData]);
   const exposureRequestEntries = useMemo(() => effectiveRunIds.map(runId => ({
     runId,
     request: getExposureRequest(runId),
-  })), [effectiveRunIds, getExposureRequest]);
+    applicationsRequest: getApplicationsRequest(runId),
+  })), [effectiveRunIds, getExposureRequest, getApplicationsRequest]);
 
   const nectarVisible = layers.Nectar?.visible;
   const pollenVisible = layers.Pollen?.visible;
@@ -397,10 +415,10 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     [availableRuns, viewRunIds]
   );
   const exposureRequestError = exposureRequestEntries
-    .map(({ request }) => request?.exposureError || request?.applicationsError)
+    .map(({ request, applicationsRequest }) => request?.exposureError || applicationsRequest?.applicationsError)
     .find(Boolean);
-  const isExposureLoading = exposureRequestEntries.some(({ request }) =>
-    request?.exposureStatus === 'loading' || request?.applicationsStatus === 'loading'
+  const isExposureLoading = exposureRequestEntries.some(({ request, applicationsRequest }) =>
+    request?.exposureStatus === 'loading' || applicationsRequest?.applicationsStatus === 'loading'
   );
 
   // Transform bee population data to chart format
@@ -437,11 +455,12 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     }
 
     effectiveRunIds.forEach((runId) => {
-      const request = getExposureRequest(runId);
-      if (!request?.applicationsStatus || request.applicationsStatus === 'idle') {
-        dispatch(fetchApplications({ runId, featureIds: selectedFeatureIds }));
+      const applicationsRequest = getApplicationsRequest(runId);
+      if (!applicationsRequest?.applicationsStatus || applicationsRequest.applicationsStatus === 'idle') {
+        dispatch(fetchApplications({ runId }));
       }
 
+      const request = getExposureRequest(runId);
       if (
         activeTab === 'exposure' &&
         (!request?.exposureStatus || request.exposureStatus === 'idle')
@@ -449,7 +468,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
         dispatch(fetchExposureTimeseries({ runId, featureIds: selectedFeatureIds }));
       }
     });
-  }, [activeTab, dispatch, effectiveRunIds, getExposureRequest, selectedFeatureIds, viewRunIds.length]);
+  }, [activeTab, dispatch, effectiveRunIds, getExposureRequest, getApplicationsRequest, selectedFeatureIds, viewRunIds.length]);
 
   // Add keyboard navigation
   useEffect(() => {

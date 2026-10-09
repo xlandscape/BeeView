@@ -31,5 +31,13 @@
 }
 
 .filter-control {
+  display: block;
   margin-bottom: 5px;
+  font-size: 0.9em;
+}
+
+.filter-hint {
+  font-size: 0.8em;
+  color: #666;
+  margin-bottom: 4px;
 }

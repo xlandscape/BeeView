@@ -53,12 +53,20 @@ export const fetchExposureTimeseries = createAsyncThunk(
   }
 );
 
+// Applications are fetched once per run, unfiltered, and filtered by the
+// current selection on the client. The Map (applications overlay) and the
+// time series charts (application timeline) therefore share one request.
+export const applicationsRequestKey = (runId = null) => buildExposureRequestKey(runId, []);
+
+export const selectApplicationsRequest = (state, runId = null) =>
+  state.exposure.requests[applicationsRequestKey(runId)] || null;
+
 export const fetchApplications = createAsyncThunk(
   'exposure/fetchApplications',
-  async ({ runId = null, featureIds = [] } = {}, { rejectWithValue }) => {
-    const requestKey = buildExposureRequestKey(runId, featureIds);
+  async ({ runId = null } = {}, { rejectWithValue }) => {
+    const requestKey = applicationsRequestKey(runId);
     try {
-      const response = await fetch(appendQueryParams('/api/applications', runId, featureIds));
+      const response = await fetch(appendQueryParams('/api/applications', runId, []));
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} fetching applications`);
       }
@@ -67,14 +75,14 @@ export const fetchApplications = createAsyncThunk(
       return {
         requestKey,
         runId,
-        featureIds: normalizeFeatureIds(featureIds),
+        featureIds: [],
         applications: data.applications || [],
       };
     } catch (error) {
       return rejectWithValue({
         requestKey,
         runId,
-        featureIds: normalizeFeatureIds(featureIds),
+        featureIds: [],
         message: error.message || 'Failed to fetch applications',
       });
     }
