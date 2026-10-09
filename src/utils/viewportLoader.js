@@ -625,44 +625,6 @@ export async function loadBeePopulationData(timePoint) {
 }
 
 /**
- * Load complete bee population time series
- */
-export async function loadBeePopulationTimeSeries() {
-  try {
-    console.log('Loading complete bee population time series...');
-    
-    // Check cache first
-    const cacheKey = 'bee_population_timeseries';
-    if (VIEWPORT_CONFIG.ENABLE_CACHING) {
-      const cached = viewportCache.get(cacheKey);
-      if (cached) {
-        console.log('Using cached bee population time series');
-        return cached;
-      }
-    }
-    
-    const response = await fetch(`${API_BASE_URL}/api/bee-population/timeseries`);
-    if (!response.ok) {
-      throw new Error(`Failed to load bee population time series: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    // Cache the result
-    if (VIEWPORT_CONFIG.ENABLE_CACHING) {
-      viewportCache.set(cacheKey, data);
-    }
-    
-    console.log('Loaded complete bee population time series');
-    return data;
-    
-  } catch (error) {
-    console.error('Error loading bee population time series:', error);
-    throw error;
-  }
-}
-
-/**
  * Load available bee population metrics
  */
 export async function loadBeePopulationMetrics() {

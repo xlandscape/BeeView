@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback, useMemo, lazy, Suspense } from
 import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedTimePoint, setAvailableTimePoints } from '../../store/timeSlice';
 import { clearSelection } from '../../store/reducers/selectionReducer';
-import { loadBeePopulationTimeSeries } from '../../utils/viewportLoader';
 import { loadForageMatrix } from '../../utils/forageMatrix';
 import { buildApiUrl } from '../../config/api';
 import { RUN_COLOR_PALETTE } from '../../store/slices/runsSlice';
@@ -18,40 +17,9 @@ const CompareChart = lazy(() => import('../CompareChart'));
 
 const EMPTY_APPLICATIONS = [];
 
-const DERIVED_BEE_METRICS = {
-  'TotalIHbees + TotalForagers + TotalDroneEggs + TotalEggs + TotalDroneLarvae + TotalLarvae + TotalDronePupae + TotalPupae': [
-    'TotalIHbees',
-    'TotalForagers',
-    'TotalDroneEggs',
-    'TotalEggs',
-    'TotalDroneLarvae',
-    'TotalLarvae',
-    'TotalDronePupae',
-    'TotalPupae',
-  ],
-  'TotalIHbees + TotalForagers': ['TotalIHbees', 'TotalForagers'],
-  'TotalDroneEggs + TotalEggs': ['TotalDroneEggs', 'TotalEggs'],
-  'TotalDroneLarvae + TotalLarvae': ['TotalDroneLarvae', 'TotalLarvae'],
-  'TotalDronePupae + TotalPupae': ['TotalDronePupae', 'TotalPupae'],
-};
-
-function valueForBeeMetric(dayData, metricKey) {
-  if (typeof dayData?.[metricKey] === 'number') {
-    return dayData[metricKey];
-  }
-
-  const formula = DERIVED_BEE_METRICS[metricKey];
-  if (!formula) return 0;
-
-  const hasAllInputs = formula.every((name) => typeof dayData?.[name] === 'number');
-  if (!hasAllInputs) return 0;
-  return formula.reduce((sum, name) => sum + dayData[name], 0);
-}
-
 const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const dispatch = useDispatch();
   const [averageData, setAverageData] = useState([]);
-  const [beePopulationData, setBeePopulationData] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [beeLineScope, setBeeLineScope] = useState('mc');
@@ -65,11 +33,17 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   const viewRunIds = useSelector(state => state.runs.viewRunIds);
   const availableRuns = useSelector(state => state.runs.availableRuns);
   const exposureRequests = useSelector(state => state.exposure.requests);
-  const dayCount = Math.max(
-    averageData?.length || 0,
-    beePopulationData?.timeseries?.length || 0,
-    365,
-  );
+  // Upper bound for keyboard day navigation: longest loaded series (forage
+  // averages or any selected run's replicate data), at least one year.
+  const dayCount = useMemo(() => {
+    let days = Math.max(averageData?.length || 0, 365);
+    Object.values(runReplicateData).forEach((run) => {
+      Object.values(run?.metrics || {}).forEach((metric) => {
+        days = Math.max(days, metric?.days?.length || 0);
+      });
+    });
+    return days;
+  }, [averageData, runReplicateData]);
   const effectiveRunIds = useMemo(() => (viewRunIds.length > 0 ? viewRunIds : [null]), [viewRunIds]);
   const exposureRunIds = useMemo(() => (viewRunIds.length > 0 ? viewRunIds : []), [viewRunIds]);
 
@@ -110,16 +84,6 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
       setIsLoading(false);
     }
   }, [selectedFeatureIds, dispatch]);
-
-  const fetchBeePopulationData = useCallback(async () => {
-    try {
-      const data = await loadBeePopulationTimeSeries();
-      setBeePopulationData(data);
-    } catch (err) {
-      console.error('Error fetching bee population data:', err);
-      setBeePopulationData(null);
-    }
-  }, []);
 
   // Per-run replicate fetch: pull /api/bee-population/replicates for each viewRunId.
   // Cached in `runReplicateData` keyed by runId so flipping a chip on/off doesn't refetch.
@@ -421,29 +385,10 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     request?.exposureStatus === 'loading' || applicationsRequest?.applicationsStatus === 'loading'
   );
 
-  // Transform bee population data to chart format
-  const getBeeChartData = (metricKey) => {
-    if (!beePopulationData || !beePopulationData.timeseries || !Array.isArray(beePopulationData.timeseries)) {
-      return [];
-    }
-    
-    // The API returns: {"timeseries": [{"day": 1, "totalEggs": 123, ...}, ...]}
-    // Transform to chart format: [{day: 1, totalEggs: 123}, ...]
-    return beePopulationData.timeseries.map(dayData => {
-      let value = valueForBeeMetric(dayData, metricKey);
-      
-      return {
-        day: dayData.day,
-        [metricKey]: value
-      };
-    });
-  };
-
   useEffect(() => {
     if (activeTab === 'compare') return;
     fetchAverageData();
-    fetchBeePopulationData();
-  }, [activeTab, fetchAverageData, fetchBeePopulationData]);
+  }, [activeTab, fetchAverageData]);
 
   useEffect(() => {
     if (activeTab !== 'nectar-pollen' && activeTab !== 'exposure') {
