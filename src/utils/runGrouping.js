@@ -21,6 +21,22 @@ export function treatmentLabel(key) {
 }
 
 /**
+ * Display name of a treated run's variant. Batch runs are labelled
+ * "<hive>_<treatment>" (e.g. hive_3614_Dimethoate), so the suffix after the
+ * hive group id names the variant; otherwise fall back to the GAP preset id.
+ */
+export function variantLabel(run) {
+  if (!run) return 'treated';
+  const hive = run.hive_group_id || run.batch_sim_id || '';
+  const label = run.label || run.sim_id || '';
+  if (hive && label.startsWith(`${hive}_`)) {
+    const suffix = label.slice(hive.length + 1).replace(/_MC\d+$/, '');
+    if (suffix && suffix !== 'treated' && suffix !== 'untreated') return suffix.replace(/_/g, ' ');
+  }
+  return treatmentLabel(treatmentKey(run));
+}
+
+/**
  * Group runs by hive / batch for hierarchical display.
  * Each group lists its untreated runs, all treated runs, and the treated runs
  * split by treatment variant (`treatments`, default GAP first).
@@ -53,7 +69,7 @@ export function groupRunsByMC(runs) {
       const variantKey = treatmentKey(run);
       let variant = group.treatments.find((t) => t.key === variantKey);
       if (!variant) {
-        variant = { key: variantKey, label: treatmentLabel(variantKey), runs: [] };
+        variant = { key: variantKey, label: variantLabel(run), runs: [] };
         group.treatments.push(variant);
       }
       variant.runs.push(run);

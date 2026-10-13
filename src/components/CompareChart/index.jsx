@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { buildApiUrl } from '../../config/api';
-import { treatmentKey, treatmentLabel } from '../../utils/runGrouping';
+import { treatmentKey, variantLabel } from '../../utils/runGrouping';
 import './CompareChart.css';
 
 const RELATIVE_HEIGHT = 320;
@@ -925,10 +925,11 @@ function SurvivalChart({ data, width = 860 }) {
  * variants that have at least one complete pair, `treatment` is the one used.
  */
 function buildPairSelection(availableRuns, viewRunIds, wantedTreatment) {
-  const empty = { baselineIds: [], scenarioIds: [], treatments: [], treatment: null };
+  const empty = { baselineIds: [], scenarioIds: [], treatments: [], treatment: null, treatmentLabels: {} };
   if (!viewRunIds || viewRunIds.length === 0) return empty;
   const selected = availableRuns.filter((r) => viewRunIds.includes(r.id));
   const groups = new Map();
+  const treatmentLabels = {};
   selected.forEach((run) => {
     // Group by hive location, normalizing away treatment suffixes like "_treated" or "_untreated"
     let hive = run.hive_group_id || run.sim_id;
@@ -940,6 +941,7 @@ function buildPairSelection(availableRuns, viewRunIds, wantedTreatment) {
     if (run.treatment_on) {
       const variant = treatmentKey(run);
       if (!entry.treated.has(variant)) entry.treated.set(variant, run.id);
+      if (!treatmentLabels[variant]) treatmentLabels[variant] = variantLabel(run);
     } else if (!entry.untreated) {
       entry.untreated = run.id;
     }
@@ -957,7 +959,7 @@ function buildPairSelection(availableRuns, viewRunIds, wantedTreatment) {
   const treatments = Array.from(pairsByTreatment.keys()).sort((a, b) => order(a) - order(b) || a.localeCompare(b));
   if (treatments.length === 0) return empty;
   const treatment = treatments.includes(wantedTreatment) ? wantedTreatment : treatments[0];
-  return { ...pairsByTreatment.get(treatment), treatments, treatment };
+  return { ...pairsByTreatment.get(treatment), treatments, treatment, treatmentLabels };
 }
 
 const CompareChart = () => {
@@ -971,7 +973,7 @@ const CompareChart = () => {
   const [spatialScope, setSpatialScope] = useState('pair');
   const [wantedTreatment, setWantedTreatment] = useState(null);
 
-  const { baselineIds, scenarioIds, treatments, treatment } = useMemo(
+  const { baselineIds, scenarioIds, treatments, treatment, treatmentLabels } = useMemo(
     () => buildPairSelection(availableRuns, viewRunIds, wantedTreatment),
     [availableRuns, viewRunIds, wantedTreatment],
   );
@@ -1041,7 +1043,7 @@ const CompareChart = () => {
             treatment:
             <select value={treatment} onChange={(e) => setWantedTreatment(e.target.value)}>
               {treatments.map((key) => (
-                <option key={key} value={key}>{treatmentLabel(key)}</option>
+                <option key={key} value={key}>{treatmentLabels[key] || key}</option>
               ))}
             </select>
           </label>
@@ -1072,8 +1074,8 @@ const CompareChart = () => {
             &nbsp;·&nbsp;from {matrixData.n_selected_pairs ?? baselineIds.length} selected pair{(matrixData.n_selected_pairs ?? baselineIds.length) === 1 ? '' : 's'}
             &nbsp;·&nbsp;metric: <code>{metric}</code>
             &nbsp;·&nbsp;scope: <code>{spatialScope}</code>
-            {treatment && treatment !== 'treated' && (
-              <>&nbsp;·&nbsp;treatment: <code>{treatmentLabel(treatment)}</code></>
+            {treatment && (
+              <>&nbsp;·&nbsp;treatment: <code>{treatmentLabels[treatment] || treatment}</code></>
             )}
           </div>
         </>
