@@ -66,6 +66,11 @@
   font-weight: 600;
 }
 
+.view-run-chip .chip-variant {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+
 .view-run-chip .chip-tag {
   display: inline-block;
   font-weight: 700;

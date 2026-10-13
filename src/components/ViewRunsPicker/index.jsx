@@ -39,9 +39,19 @@ const ViewRunsPicker = () => {
       <span className="view-runs-label">View:</span>
       <div className="view-runs-groups">
         {groups.map((group, colorIdx) => {
+          // One chip per treatment variant; the variant name is shown only when a hive
+          // has several treated variants or a non-default GAP (e.g. thiacloprid).
+          const showVariantName = group.treatments.length > 1
+            || group.treatments.some((t) => t.label !== 'treated');
           const variants = [
-            { tag: 'U', runs: group.untreated, treatmentLabel: 'untreated' },
-            { tag: 'T', runs: group.treated, treatmentLabel: 'treated' },
+            { tag: 'U', key: 'untreated', runs: group.untreated, treatmentLabel: 'untreated', suffix: '' },
+            ...group.treatments.map((t) => ({
+              tag: 'T',
+              key: t.key,
+              runs: t.runs,
+              treatmentLabel: t.label,
+              suffix: showVariantName ? t.label : '',
+            })),
           ].filter((v) => v.runs.length > 0);
 
           return variants.map((variant, variantIdx) => {
@@ -61,7 +71,7 @@ const ViewRunsPicker = () => {
 
             return (
               <button
-                key={`${group.batch_sim_id}-${variant.tag}`}
+                key={`${group.batch_sim_id}-${variant.key}`}
                 type="button"
                 className={`view-run-chip ${isOn ? 'on' : ''}`}
                 style={isOn ? { borderColor: color, color } : undefined}
@@ -70,6 +80,7 @@ const ViewRunsPicker = () => {
               >
                 <span className="chip-tag">{variant.tag}</span>
                 {group.label}
+                {variant.suffix && <span className="chip-variant"> · {variant.suffix}</span>}
               </button>
             );
           });

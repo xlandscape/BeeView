@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { buildApiUrl } from '../../config/api';
+import { treatmentKey, treatmentLabel } from '../../utils/runGrouping';
 import './CompareChart.css';
 
 const RELATIVE_HEIGHT = 320;
@@ -918,10 +919,14 @@ function SurvivalChart({ data, width = 860 }) {
  */
 /**
  * Pair runs from the View-chip selection only.
- * Runs sharing hive_group_id are paired: untreated=baseline, treated=scenario.
+ * Runs sharing hive_group_id (and outer MC) are paired: untreated = baseline,
+ * treated = scenario. With several treated variants per hive (e.g. default and
+ * thiacloprid GAPs) one variant is compared at a time; `treatments` lists the
+ * variants that have at least one complete pair, `treatment` is the one used.
  */
-function buildPairSelection(availableRuns, viewRunIds) {
-  if (!viewRunIds || viewRunIds.length === 0) return { baselineIds: [], scenarioIds: [] };
+function buildPairSelection(availableRuns, viewRunIds, wantedTreatment) {
+  const empty = { baselineIds: [], scenarioIds: [], treatments: [], treatment: null };
+  if (!viewRunIds || viewRunIds.length === 0) return empty;
   const selected = availableRuns.filter((r) => viewRunIds.includes(r.id));
   const groups = new Map();
   selected.forEach((run) => {
@@ -930,19 +935,29 @@ function buildPairSelection(availableRuns, viewRunIds) {
     hive = hive.replace(/_(?:treated|untreated)$/, '');
     const mc = run.outer_mc_id !== undefined && run.outer_mc_id !== null ? run.outer_mc_id : 'default';
     const key = `${hive}::${mc}`;
-    if (!groups.has(key)) groups.set(key, { untreated: null, treated: null });
+    if (!groups.has(key)) groups.set(key, { untreated: null, treated: new Map() });
     const entry = groups.get(key);
-    if (run.treatment_on) { if (!entry.treated)   entry.treated   = run.id; }
-    else                  { if (!entry.untreated) entry.untreated = run.id; }
-  });
-  const baselineIds = [], scenarioIds = [];
-  groups.forEach((v) => {
-    if (v.untreated != null && v.treated != null) {
-      baselineIds.push(v.untreated);
-      scenarioIds.push(v.treated);
+    if (run.treatment_on) {
+      const variant = treatmentKey(run);
+      if (!entry.treated.has(variant)) entry.treated.set(variant, run.id);
+    } else if (!entry.untreated) {
+      entry.untreated = run.id;
     }
   });
-  return { baselineIds, scenarioIds };
+  const pairsByTreatment = new Map();
+  groups.forEach((v) => {
+    if (v.untreated == null) return;
+    v.treated.forEach((treatedId, variant) => {
+      if (!pairsByTreatment.has(variant)) pairsByTreatment.set(variant, { baselineIds: [], scenarioIds: [] });
+      pairsByTreatment.get(variant).baselineIds.push(v.untreated);
+      pairsByTreatment.get(variant).scenarioIds.push(treatedId);
+    });
+  });
+  const order = (k) => (k === 'treated' || k === 'default' ? 0 : 1);
+  const treatments = Array.from(pairsByTreatment.keys()).sort((a, b) => order(a) - order(b) || a.localeCompare(b));
+  if (treatments.length === 0) return empty;
+  const treatment = treatments.includes(wantedTreatment) ? wantedTreatment : treatments[0];
+  return { ...pairsByTreatment.get(treatment), treatments, treatment };
 }
 
 const CompareChart = () => {
@@ -954,10 +969,11 @@ const CompareChart = () => {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState(null);
   const [spatialScope, setSpatialScope] = useState('pair');
+  const [wantedTreatment, setWantedTreatment] = useState(null);
 
-  const { baselineIds, scenarioIds } = useMemo(
-    () => buildPairSelection(availableRuns, viewRunIds),
-    [availableRuns, viewRunIds],
+  const { baselineIds, scenarioIds, treatments, treatment } = useMemo(
+    () => buildPairSelection(availableRuns, viewRunIds, wantedTreatment),
+    [availableRuns, viewRunIds, wantedTreatment],
   );
 
   // Fetch reduction matrix whenever the chip selection or settings change.
@@ -1020,6 +1036,16 @@ const CompareChart = () => {
         <span className="compare-summary-hint">
           &nbsp;·&nbsp;{viewRunIds.length} chips selected
         </span>
+        {treatments.length > 1 && (
+          <label className="compare-scope-control">
+            treatment:
+            <select value={treatment} onChange={(e) => setWantedTreatment(e.target.value)}>
+              {treatments.map((key) => (
+                <option key={key} value={key}>{treatmentLabel(key)}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="compare-scope-control">
           percentile scope:
           <select value={spatialScope} onChange={(e) => setSpatialScope(e.target.value)}>
@@ -1046,6 +1072,9 @@ const CompareChart = () => {
             &nbsp;·&nbsp;from {matrixData.n_selected_pairs ?? baselineIds.length} selected pair{(matrixData.n_selected_pairs ?? baselineIds.length) === 1 ? '' : 's'}
             &nbsp;·&nbsp;metric: <code>{metric}</code>
             &nbsp;·&nbsp;scope: <code>{spatialScope}</code>
+            {treatment && treatment !== 'treated' && (
+              <>&nbsp;·&nbsp;treatment: <code>{treatmentLabel(treatment)}</code></>
+            )}
           </div>
         </>
       )}

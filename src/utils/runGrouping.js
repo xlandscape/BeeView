@@ -4,8 +4,26 @@
  */
 
 /**
- * Group runs by (batch_sim_id, outer_mc_id) for hierarchical display.
- * Returns an array of groups, each with metadata and contained runs.
+ * Treatment variant of a run: 'untreated', or the GAP preset id of a treated run
+ * ('treated' for runs imported without a <GAP> element). Several treated variants
+ * per hive (e.g. default and thiacloprid) are told apart by this key.
+ */
+export function treatmentKey(run) {
+  if (!run || !run.treatment_on) return 'untreated';
+  return run.gap || 'treated';
+}
+
+/** Human-readable name of a treatment key for chips and selectors. */
+export function treatmentLabel(key) {
+  if (key === 'untreated') return 'untreated';
+  if (key === 'treated' || key === 'default') return 'treated';
+  return key.replace(/_/g, ' ');
+}
+
+/**
+ * Group runs by hive / batch for hierarchical display.
+ * Each group lists its untreated runs, all treated runs, and the treated runs
+ * split by treatment variant (`treatments`, default GAP first).
  */
 export function groupRunsByMC(runs) {
   if (!runs || runs.length === 0) return [];
@@ -23,6 +41,7 @@ export function groupRunsByMC(runs) {
         label: batch,
         untreated: [],
         treated: [],
+        treatments: [],
         all: [],
       });
     }
@@ -31,9 +50,21 @@ export function groupRunsByMC(runs) {
     group.all.push(run);
     if (run.treatment_on) {
       group.treated.push(run);
+      const variantKey = treatmentKey(run);
+      let variant = group.treatments.find((t) => t.key === variantKey);
+      if (!variant) {
+        variant = { key: variantKey, label: treatmentLabel(variantKey), runs: [] };
+        group.treatments.push(variant);
+      }
+      variant.runs.push(run);
     } else {
       group.untreated.push(run);
     }
+  });
+
+  const variantOrder = (t) => (t.key === 'treated' || t.key === 'default' ? 0 : 1);
+  groupMap.forEach((group) => {
+    group.treatments.sort((a, b) => variantOrder(a) - variantOrder(b) || a.key.localeCompare(b.key));
   });
 
   return Array.from(groupMap.values()).sort((a, b) => {
