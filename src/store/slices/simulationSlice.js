@@ -15,6 +15,24 @@ export const fetchScenarioBounds = createAsyncThunk('simulation/fetchScenarioBou
   return res.json();
 });
 
+export const fetchGaps = createAsyncThunk('simulation/fetchGaps', async () => {
+  const res = await fetch(buildApiUrl('/api/gaps'));
+  if (!res.ok) throw new Error('Failed to fetch GAP presets');
+  return res.json();
+});
+
+export const saveGapPreset = createAsyncThunk('simulation/saveGapPreset', async (preset, { dispatch, rejectWithValue }) => {
+  const res = await fetch(buildApiUrl('/api/gaps'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(preset),
+  });
+  const data = await res.json();
+  if (!res.ok) return rejectWithValue(data.detail || 'Could not save the preset');
+  await dispatch(fetchGaps());
+  return data;
+});
+
 export const submitSimulation = createAsyncThunk('simulation/submit', async (params, { rejectWithValue }) => {
   const res = await fetch(buildApiUrl('/api/simulate'), {
     method: 'POST',
@@ -56,7 +74,20 @@ const defaultForm = {
   RunLabel: '',
   HiveGroupId: '',
   NumberMC: 1,
+  // Treatment: GAP preset id, per-parameter overrides of that preset, and
+  // (treatment-set mode) the list of treated variants to run next to an untreated run.
+  GAP: 'default',
+  overrides: {},
+  treatmentMode: 'single', // 'single' | 'set'
+  treatments: [],
 };
+
+export const newTreatment = (gapId = 'default') => ({
+  id: '',
+  GAP: gapId,
+  MinNumberApplications: 1,
+  MaxNumberApplications: 1,
+});
 
 const simulationSlice = createSlice({
   name: 'simulation',
@@ -66,6 +97,11 @@ const simulationSlice = createSlice({
     form: { ...defaultForm },
     scenarios: [],
     scenarioBounds: null,
+    gaps: [],
+    gapParameters: {},
+    gapsLoading: false,
+    presetSaveStatus: 'idle', // idle | loading | succeeded | failed
+    presetSaveError: null,
     jobs: [],
     submitStatus: 'idle', // idle | loading | succeeded | failed
     submitError: null,
@@ -94,6 +130,34 @@ const simulationSlice = createSlice({
       state.submitStatus = 'idle';
       state.submitError = null;
     },
+    setGapOverride(state, action) {
+      const { key, value } = action.payload;
+      if (value === null || value === undefined || value === '') delete state.form.overrides[key];
+      else state.form.overrides[key] = value;
+    },
+    clearGapOverrides(state) {
+      state.form.overrides = {};
+    },
+    setTreatmentMode(state, action) {
+      state.form.treatmentMode = action.payload;
+      if (action.payload === 'set' && state.form.treatments.length === 0) {
+        state.form.treatments = [{ ...newTreatment(state.form.GAP), id: 'treated' }];
+      }
+    },
+    addTreatment(state) {
+      state.form.treatments.push(newTreatment(state.form.GAP));
+    },
+    updateTreatment(state, action) {
+      const { index, patch } = action.payload;
+      if (state.form.treatments[index]) Object.assign(state.form.treatments[index], patch);
+    },
+    removeTreatment(state, action) {
+      state.form.treatments.splice(action.payload, 1);
+    },
+    resetPresetSave(state) {
+      state.presetSaveStatus = 'idle';
+      state.presetSaveError = null;
+    },
     setHivePosition(state, action) {
       const { x, y } = action.payload;
       state.form.BeeHaveMapCenterPointX = x;
@@ -109,6 +173,29 @@ const simulationSlice = createSlice({
         state.scenariosLoading = false;
       })
       .addCase(fetchScenarios.rejected, (state) => { state.scenariosLoading = false; })
+      .addCase(fetchGaps.pending, (state) => { state.gapsLoading = true; })
+      .addCase(fetchGaps.fulfilled, (state, action) => {
+        state.gaps = action.payload.gaps || [];
+        state.gapParameters = action.payload.parameters || {};
+        state.gapsLoading = false;
+        if (state.gaps.length > 0 && !state.gaps.some((g) => g.id === state.form.GAP)) {
+          state.form.GAP = state.gaps[0].id;
+        }
+      })
+      .addCase(fetchGaps.rejected, (state) => { state.gapsLoading = false; })
+      .addCase(saveGapPreset.pending, (state) => {
+        state.presetSaveStatus = 'loading';
+        state.presetSaveError = null;
+      })
+      .addCase(saveGapPreset.fulfilled, (state, action) => {
+        state.presetSaveStatus = 'succeeded';
+        state.form.GAP = action.payload.id;
+        state.form.overrides = {};
+      })
+      .addCase(saveGapPreset.rejected, (state, action) => {
+        state.presetSaveStatus = 'failed';
+        state.presetSaveError = action.payload || action.error.message;
+      })
       .addCase(fetchScenarioBounds.fulfilled, (state, action) => {
         state.scenarioBounds = action.payload;
         if (!state.form.BeeHaveMapCenterPointX) {
@@ -140,6 +227,13 @@ export const {
   updateForm,
   resetForm,
   setHivePosition,
+  setGapOverride,
+  clearGapOverrides,
+  setTreatmentMode,
+  addTreatment,
+  updateTreatment,
+  removeTreatment,
+  resetPresetSave,
 } = simulationSlice.actions;
 
 export default simulationSlice.reducer;

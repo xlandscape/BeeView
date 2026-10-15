@@ -147,6 +147,134 @@
   50% { box-shadow: 0 0 0 4px rgba(37, 99, 235, 0); }
 }
 
+/* Scenario weather note */
+.sim-note {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Treatment mode toggle */
+.sim-mode-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.sim-mode-toggle button {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.sim-mode-toggle button.active {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+/* GAP preset card */
+.gap-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafafa;
+  font-size: 0.78rem;
+}
+
+.gap-card-meta div {
+  margin-bottom: 2px;
+}
+
+.gap-card-notes {
+  color: #6b7280;
+  margin: 4px 0 6px;
+}
+
+.gap-card-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.gap-card-table td {
+  padding: 2px 4px;
+  border-top: 1px solid #eee;
+  vertical-align: middle;
+}
+
+.gap-card-table td.gap-card-key {
+  font-family: monospace;
+  font-size: 0.72rem;
+}
+
+.gap-card-table input {
+  width: 90px;
+  padding: 2px 4px;
+  font-size: 0.78rem;
+}
+
+.gap-card-table input.overridden {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+.gap-card-table td.gap-card-unit {
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.gap-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  align-items: center;
+}
+
+.gap-card-actions button,
+.sim-link-btn {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0;
+}
+
+.gap-save-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #ddd;
+}
+
+.gap-save-form input,
+.gap-save-form textarea {
+  font-size: 0.78rem;
+  padding: 4px 6px;
+}
+
+/* Treatment set rows */
+.sim-treatment-row {
+  display: grid;
+  grid-template-columns: 1.2fr 2fr 0.7fr 0.7fr auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.sim-treatment-row input,
+.sim-treatment-row select {
+  min-width: 0;
+}
+
+.sim-treatment-head {
+  font-size: 0.7rem;
+  color: #6b7280;
+}
+
 .sim-actions {
   display: flex;
   gap: 8px;
