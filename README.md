@@ -79,15 +79,20 @@ The client connects to the server at `http://localhost:32000` by default. If you
 - Interactive map visualization using MapLibre GL and Deck.gl
 - Bee population charts and time series
 - Land use and vegetation analysis
-- Layer controls for different data overlays
+- Layer controls for different data overlays, land-use class filter under the LULC layer
 - Sidebar with data panels
+- Run chips per hive and treatment variant (untreated, Dimethoate, thiacloprid, ...), compare tab with a treatment
+  selector when several treated variants are selected
+- "New Simulation" panel: scenario and hive placement, simulation setup, GAP preset with an editable parameter card
+  (edits are sent as overrides), "save as preset" into xPollinator's `model/variant/gaps.json`, and a treatment-set
+  mode that launches one untreated run plus one run per treatment sharing a hive group
 
 ### Development
 
 - The application uses Vite for fast development builds
 - Redux Toolkit for state management
 - D3.js for data visualization
-- Turf.js for geospatial operations
+- Per-module d3 imports; maplibre, deck.gl, react and d3 are split into separate vendor chunks
 
 ### API Integration
 
