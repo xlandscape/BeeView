@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { toggleLayerVisibility } from '../../store/slices/layerSlice';
+import './LayerControls.css';
 
 function LayerControls({ layer, label, children }) {
   const visible = useSelector(state => state.layers[layer]?.visible);
