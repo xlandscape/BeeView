@@ -1,13 +1,17 @@
 /* Map-first shell: the map fills the viewport, overlays position themselves with
-   the --inset-* variables (set by LayoutVars; defaults match the ui slice). */
-.app-shell {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
+   the --inset-* variables (kept current by LayoutVars; these are first-paint
+   defaults matching the ui slice). */
+:root {
   --inset-top: 52px;
   --inset-left: 260px;
   --inset-right: 380px;
   --inset-bottom: 340px;
+}
+
+.app-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }
 
 .map-layer {

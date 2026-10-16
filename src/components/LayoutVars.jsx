@@ -3,20 +3,20 @@ import { useSelector } from 'react-redux';
 import { selectInsets } from '../store/slices/uiSlice';
 
 /**
- * Writes the overlay insets as CSS custom properties on the app shell, so drawers,
- * the simulation panel and the map's own widgets can position themselves in CSS.
+ * Publishes the overlay insets as CSS custom properties on the document root, so
+ * drawers, the simulation panel and the map's own widgets can position
+ * themselves in CSS. Defaults live in App.css (:root) for the first paint.
  */
-export default function LayoutVars({ shellRef }) {
+export default function LayoutVars() {
   const insets = useSelector(selectInsets);
 
   useLayoutEffect(() => {
-    const el = shellRef.current;
-    if (!el) return;
-    el.style.setProperty('--inset-top', `${insets.top}px`);
-    el.style.setProperty('--inset-left', `${insets.left}px`);
-    el.style.setProperty('--inset-right', `${insets.right}px`);
-    el.style.setProperty('--inset-bottom', `${insets.bottom}px`);
-  }, [shellRef, insets]);
+    const style = document.documentElement.style;
+    style.setProperty('--inset-top', `${insets.top}px`);
+    style.setProperty('--inset-left', `${insets.left}px`);
+    style.setProperty('--inset-right', `${insets.right}px`);
+    style.setProperty('--inset-bottom', `${insets.bottom}px`);
+  }, [insets]);
 
   return null;
 }

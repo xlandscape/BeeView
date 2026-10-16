@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
@@ -19,7 +19,6 @@ import './App.css';
  */
 function App() {
   const dispatch = useDispatch();
-  const shellRef = useRef(null);
   const simulationPanelOpen = useSelector((state) => state.simulation.panelOpen);
 
   useEffect(() => {
@@ -28,8 +27,8 @@ function App() {
   }, [dispatch]);
 
   return (
-    <div className="app-shell" ref={shellRef}>
-      <LayoutVars shellRef={shellRef} />
+    <div className="app-shell">
+      <LayoutVars />
       <div className="map-layer">
         <Map />
       </div>

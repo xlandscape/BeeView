@@ -148,6 +148,13 @@
   padding: 10px 12px;
 }
 
+/* Side drawers scroll vertically only; long labels wrap instead of widening the panel. */
+.drawer--left .drawer__body,
+.drawer--right .drawer__body {
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+}
+
 .drawer__body[hidden] {
   display: none;
 }
