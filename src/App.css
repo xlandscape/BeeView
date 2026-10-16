@@ -1,106 +1,39 @@
-.app-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+/* Map-first shell: the map fills the viewport, overlays position themselves with
+   the --inset-* variables (set by LayoutVars; defaults match the ui slice). */
+.app-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  --inset-top: 52px;
+  --inset-left: 260px;
+  --inset-right: 380px;
+  --inset-bottom: 340px;
 }
 
-.main-content {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  position: relative;
+.map-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
 }
 
-.sidebar {
-  width: 250px;
-  background: #f4f4f4;
-  border-right: 1px solid #ddd;
-  display: flex;
-  flex-direction: column;
+/* Keep the map's own controls out from under the overlays. */
+.map-layer .maplibregl-ctrl-top-left {
+  top: var(--inset-top);
+  left: var(--inset-left);
+  transition: top 0.15s ease, left 0.15s ease;
 }
 
-.content-area {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
+.map-layer .maplibregl-ctrl-top-right {
+  top: var(--inset-top);
+  right: var(--inset-right);
 }
 
-.map-chart-stack {
-  display: flex;
-  flex-direction: column;
-  flex: 3;
-  min-width: 0;
-  min-height: 0;
+.map-layer .maplibregl-ctrl-bottom-left {
+  bottom: var(--inset-bottom);
+  left: var(--inset-left);
 }
 
-.map-container {
-  flex: 2;
-  min-width: 0;
-  min-height: 300px;
-  position: relative;
-  width: 100%;
+.map-layer .maplibregl-ctrl-bottom-right {
+  bottom: var(--inset-bottom);
+  right: var(--inset-right);
 }
-
-.bottom-chart {
-  flex: 1;
-  min-height: 200px;
-  background: #fff;
-  border-top: 1px solid #ccc;
-  padding: 16px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.side-chart {
-  flex: 1;
-  min-width: 300px;
-  background: #fff;
-  border-left: 1px solid #ccc;
-  padding: 16px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-}
-
-.timeseries-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Chart tabs styling */
-.chart-tabs {
-  display: flex;
-  border-bottom: 1px solid #ccc;
-  margin-bottom: 16px;
-}
-
-.tab-button {
-  padding: 8px 16px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.tab-button:hover {
-  background: #f5f5f5;
-}
-
-.tab-button.active {
-  border-bottom-color: #007bff;
-  color: #007bff;
-  background: #f8f9fa;
-}
-
-.chart-content {
-  flex: 1;
-  overflow: auto;
-}
-

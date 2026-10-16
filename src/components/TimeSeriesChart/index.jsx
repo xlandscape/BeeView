@@ -498,7 +498,7 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
 
   return (
     <div className="timeseries-container">
-      <h3 className="text-lg font-semibold mb-4">{getChartTitle()}</h3>
+      <h3 style={{ fontSize: '0.95rem', margin: '0 0 6px' }}>{getChartTitle()}</h3>
       {selectedTimePoint && (
         <div style={{ marginBottom: '15px', fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span>Selected Day: {selectedTimePoint} | {getStatusMessage()}</span>

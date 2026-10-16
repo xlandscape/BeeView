@@ -1,39 +1,28 @@
-/* filepath: c:\Users\ghzdr\xLandscape\xBeeForage\analysis\beeview\src\components\Sidebar\Sidebar.css */
-.sidebar {
-  width: 200px;
-  transition: width 0.2s;
-  background-color: #f4f4f4;
-  border-right: 1px solid #ddd;
-  position: relative;
-  /* display: flex;
-  flex-direction: column; */
+.layer-panel {
+  font-size: 0.9rem;
 }
 
-.sidebar.collapsed {
-  width: 32px; /* Only show the toggle button */
-  overflow: hidden;
+.sidebar-section-header {
+  margin: 4px 0 6px;
+  font-size: 0.95rem;
 }
 
-.toggle-button {
-  background-color: #ddd;
-  border: none;
-  cursor: pointer;
-  padding: 10px;
-  text-align: center;
+.layer-panel .sidebar-section-header + .layer-controls {
+  border-top: none;
 }
 
-.sidebar-content {
-  padding: 10px;
+.layer-panel h3:not(:first-child) {
+  margin-top: 16px;
 }
 
 .filter-controls {
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 .filter-control {
   display: block;
-  margin-bottom: 5px;
-  font-size: 0.9em;
+  margin-bottom: 4px;
+  font-size: 0.85em;
 }
 
 .filter-hint {

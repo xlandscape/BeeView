@@ -1,0 +1,41 @@
+.day-slider {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: #374151;
+}
+
+.day-slider input[type='range'] {
+  width: 160px;
+  accent-color: #2563eb;
+  margin: 0;
+}
+
+.day-slider__step {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 0.65rem;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.day-slider__step:disabled {
+  color: #c7cdd6;
+  cursor: default;
+}
+
+.day-slider__step:not(:disabled):hover {
+  background: #eff6ff;
+}
+
+.day-slider__label {
+  white-space: nowrap;
+  min-width: 92px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

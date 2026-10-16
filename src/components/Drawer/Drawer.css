@@ -1,0 +1,207 @@
+/* Docked drawers rendered above the map. Geometry comes from --drawer-size and the
+   --inset-* variables set on .app-shell. */
+.drawer {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e1e5ea;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  transition: width 0.15s ease, height 0.15s ease;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.drawer.is-resizing {
+  transition: none;
+}
+
+.drawer--left {
+  left: 0;
+  top: var(--inset-top);
+  bottom: 0;
+  width: var(--drawer-size);
+  max-width: 50vw;
+  border-left: none;
+  border-top: none;
+  border-bottom: none;
+  z-index: 21;
+}
+
+.drawer--right {
+  right: 0;
+  top: var(--inset-top);
+  bottom: 0;
+  width: var(--drawer-size);
+  max-width: 60vw;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
+  z-index: 21;
+}
+
+.drawer--bottom {
+  left: var(--inset-left);
+  right: var(--inset-right);
+  bottom: 0;
+  height: var(--drawer-size);
+  max-height: 75vh;
+  border-bottom: none;
+  z-index: 20;
+}
+
+/* Collapsed side drawers shrink to a tab at mid height. */
+.drawer--left.is-collapsed,
+.drawer--right.is-collapsed {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 88px;
+  border-radius: 0 6px 6px 0;
+  border: 1px solid #e1e5ea;
+  border-left: none;
+  transition: none;
+}
+
+.drawer--right.is-collapsed {
+  border-radius: 6px 0 0 6px;
+  border: 1px solid #e1e5ea;
+  border-right: none;
+}
+
+.drawer--bottom.is-collapsed {
+  height: 32px;
+}
+
+.drawer__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 6px 0 4px;
+  border-bottom: 1px solid #e1e5ea;
+  background: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.drawer--bottom.is-collapsed .drawer__header {
+  border-bottom: none;
+}
+
+.drawer__title {
+  white-space: nowrap;
+}
+
+.drawer__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer__toggle,
+.drawer__tab {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.drawer__toggle:hover,
+.drawer__tab:hover {
+  background: #eff6ff;
+}
+
+/* The whole collapsed side tab is the toggle. */
+.drawer__tab {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #374151;
+  padding: 0;
+}
+
+.drawer--right .drawer__tab {
+  transform: rotate(180deg);
+}
+
+.drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.drawer__body[hidden] {
+  display: none;
+}
+
+/* Resize handle on the inner edge. */
+.drawer__resizer {
+  position: absolute;
+  z-index: 2;
+  background: transparent;
+  touch-action: none;
+}
+
+.drawer__resizer:hover,
+.drawer.is-resizing .drawer__resizer {
+  background: rgba(37, 99, 235, 0.25);
+}
+
+.drawer--left .drawer__resizer {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.drawer--right .drawer__resizer {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.drawer--bottom .drawer__resizer {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+  cursor: row-resize;
+}
+
+/* While dragging: no text selection, and the WebGL canvas must not swallow pointer events. */
+body.drawer-resizing {
+  user-select: none;
+}
+
+body.drawer-resizing .map-layer {
+  pointer-events: none;
+}
+
+body.drawer-resizing-col {
+  cursor: col-resize;
+}
+
+body.drawer-resizing-row {
+  cursor: row-resize;
+}

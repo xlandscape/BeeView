@@ -224,15 +224,8 @@ function LandUseHistogram() {
   );
 
   return (
-    <div style={{
-      background: 'white',
-      borderRadius: '8px',
-      padding: '20px',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-      margin: '10px'
-    }}>
-      <h3 style={{ margin: '0 0 20px 0', color: '#333' }}>Land Use Distribution</h3>
-      <p style={{ fontSize: '12px', color: '#666', marginBottom: '20px' }}>
+    <div className="landuse-histograms">
+      <p style={{ fontSize: '12px', color: '#666', margin: '0 0 12px' }}>
         Click bars to select features on the map. Selected features will be highlighted with full opacity while others are dimmed. Showing top 20 categories by total area (hectares).
       </p>
 

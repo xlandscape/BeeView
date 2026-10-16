@@ -750,7 +750,9 @@ function Map() {
     <div style={{ position: 'relative', width: '100%', height: '100%', cursor: hivePlacementMode ? 'crosshair' : undefined }}>
       {hivePlacementMode && (
         <div style={{
-          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+          position: 'absolute', top: 'calc(var(--inset-top, 0px) + 10px)',
+          left: 'calc(var(--inset-left, 0px) + (100% - var(--inset-left, 0px) - var(--inset-right, 0px)) / 2)',
+          transform: 'translateX(-50%)',
           zIndex: 10, background: '#2563eb', color: '#fff', padding: '6px 14px',
           borderRadius: 20, fontSize: '0.85rem', fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }}>
@@ -770,8 +772,8 @@ function Map() {
       {loading && (
         <div style={{
           position: 'absolute',
-          top: '10px',
-          right: '10px',
+          top: 'calc(var(--inset-top, 0px) + 10px)',
+          right: 'calc(var(--inset-right, 0px) + 10px)',
           background: 'rgba(0, 0, 0, 0.7)',
           color: 'white',
           padding: '8px 12px',
@@ -787,8 +789,8 @@ function Map() {
       {error && (
         <div style={{
           position: 'absolute',
-          top: '10px',
-          right: '10px',
+          top: 'calc(var(--inset-top, 0px) + 10px)',
+          right: 'calc(var(--inset-right, 0px) + 10px)',
           background: 'rgba(255, 0, 0, 0.8)',
           color: 'white',
           padding: '8px 12px',
@@ -825,4 +827,5 @@ function Map() {
   );
 }
 
-export default Map;
+// Memoised: dragging a drawer must not re-render the map and its layers.
+export default React.memo(Map);

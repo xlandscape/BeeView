@@ -1,90 +1,59 @@
-import React, { useEffect, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useRef, lazy, Suspense } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import LandUseHistogram from './components/Histogram/LandUseHistogram';
-import TimeSeriesChart from './components/TimeSeriesChart';
+import ChartDrawer from './components/ChartDrawer';
+import DockedDrawer from './components/Drawer/DockedDrawer';
+import LayoutVars from './components/LayoutVars';
 // Loaded on demand: most sessions never open the simulation panel.
 const SimulationPanel = lazy(() => import('./components/SimulationPanel'));
 import { setSelectedTimePoint } from './store/timeSlice';
 import './App.css';
 
+/**
+ * Map-first layout: the map fills the viewport, everything else is an overlay
+ * (translucent top bar, docked drawers left/right/bottom, simulation panel).
+ * Overlay sizes are published as --inset-* CSS variables by LayoutVars.
+ */
 function App() {
   const dispatch = useDispatch();
-  const [activeChartTab, setActiveChartTab] = useState('nectar-pollen');
+  const shellRef = useRef(null);
   const simulationPanelOpen = useSelector((state) => state.simulation.panelOpen);
 
   useEffect(() => {
-    // Initialize app with just the default time point
-    const initializeApp = async () => {
-      try {
-        // Set first time point (day 1) as default
-        // No need to fetch and select all features initially for better performance
-        dispatch(setSelectedTimePoint(1));
-      } catch (error) {
-        console.error('Error initializing app:', error);
-      }
-    };
-
-    initializeApp();
+    // Start at day 1; data is loaded lazily by the components.
+    dispatch(setSelectedTimePoint(1));
   }, [dispatch]);
 
   return (
-    <div className="app-container">
-      <Header />
-      <div className="main-content">
-        <Sidebar />
-        <div className="content-area">
-          <div className="map-chart-stack">
-            <div className="map-container">
-              <Map />
-            </div>
-            <div className="bottom-chart">
-              {/* Chart Tabs */}
-              <div className="chart-tabs">
-                <button
-                  className={`tab-button ${activeChartTab === 'nectar-pollen' ? 'active' : ''}`}
-                  onClick={() => setActiveChartTab('nectar-pollen')}
-                >
-                  Nectar & Pollen
-                </button>
-                <button
-                  className={`tab-button ${activeChartTab === 'bee-population' ? 'active' : ''}`}
-                  onClick={() => setActiveChartTab('bee-population')}
-                >
-                  Bee Population
-                </button>
-                <button
-                  className={`tab-button ${activeChartTab === 'exposure' ? 'active' : ''}`}
-                  onClick={() => setActiveChartTab('exposure')}
-                >
-                  Exposure
-                </button>
-                <button
-                  className={`tab-button ${activeChartTab === 'compare' ? 'active' : ''}`}
-                  onClick={() => setActiveChartTab('compare')}
-                >
-                  Compare runs
-                </button>
-              </div>
-              
-              {/* Chart Content - Always show TimeSeriesChart but filter based on active tab */}
-              <div className="chart-content">
-                <TimeSeriesChart activeTab={activeChartTab} />
-              </div>
-            </div>
-          </div>
-          <div className="side-chart">
-            <LandUseHistogram />
-          </div>
-        </div>
-        {simulationPanelOpen && (
-          <Suspense fallback={null}>
-            <SimulationPanel />
-          </Suspense>
-        )}
+    <div className="app-shell" ref={shellRef}>
+      <LayoutVars shellRef={shellRef} />
+      <div className="map-layer">
+        <Map />
       </div>
+
+      <Header />
+
+      <DockedDrawer id="left" title="Layers">
+        <Sidebar />
+      </DockedDrawer>
+
+      {/* The simulation panel takes the right edge while open. */}
+      {!simulationPanelOpen && (
+        <DockedDrawer id="right" title="Land use">
+          <LandUseHistogram />
+        </DockedDrawer>
+      )}
+
+      <ChartDrawer />
+
+      {simulationPanelOpen && (
+        <Suspense fallback={null}>
+          <SimulationPanel />
+        </Suspense>
+      )}
     </div>
   );
 }
