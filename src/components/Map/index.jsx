@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setLandUseData, setNectarMax, setBeePopulationMetrics, setVegetationCodesMap } from '../../store/slices/mapSlice';
-import {Map as MapLibre, NavigationControl, useControl} from 'react-map-gl/maplibre';
+import {Map as MapLibre, NavigationControl, useControl, useMap} from 'react-map-gl/maplibre';
 import {MapboxOverlay as DeckOverlay} from '@deck.gl/mapbox';
 import {GeoJsonLayer, ScatterplotLayer, TextLayer} from '@deck.gl/layers';
 import {DataFilterExtension} from '@deck.gl/extensions';
@@ -11,6 +11,7 @@ import { selectFeature, clearSelection } from '../../store/reducers/selectionRed
 import { setHivePosition } from '../../store/slices/simulationSlice';
 import { loadViewportData, loadTimePointData, loadBeePopulationMetrics, debounce, getViewportConfig, setViewportConfig } from '../../utils/viewportLoader';
 import { fetchApplications, applicationsRequestKey } from '../../store/thunks/exposureThunks';
+import { selectInsets } from '../../store/slices/uiSlice';
 import { buildApiUrl } from '../../config/api';
 
 // Disable viewport queries (for debugging)
@@ -71,6 +72,22 @@ function toLightFeatureCollection(geoJson) {
     type: 'FeatureCollection',
     features: geoJson.features.map((f) => ({ type: 'Feature', id: f.id, properties: f.properties })),
   };
+}
+
+/**
+ * Tells maplibre how much of the viewport the overlays cover, so the camera centre
+ * (and fitBounds) refer to the visible part of the map. Lives inside <MapLibre>
+ * and re-renders alone when a drawer is dragged.
+ */
+function MapPadding() {
+  const { current: map } = useMap();
+  const insets = useSelector(selectInsets);
+  useEffect(() => {
+    const m = map && map.getMap ? map.getMap() : null;
+    if (!m) return;
+    m.setPadding({ top: insets.top, left: insets.left, right: insets.right, bottom: insets.bottom });
+  }, [map, insets]);
+  return null;
 }
 
 function DeckGLOverlay(props) {
@@ -766,6 +783,7 @@ function Map() {
       >
         <DeckGLOverlay layers={layers} onClick={handleMapClick} /* interleaved*/ />
         <NavigationControl position="top-left" />
+        <MapPadding />
       </MapLibre>
 
       {/* Loading indicator for viewport changes */}

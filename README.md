@@ -80,7 +80,11 @@ The client connects to the server at `http://localhost:32000` by default. If you
 - Bee population charts and time series
 - Land use and vegetation analysis
 - Layer controls for different data overlays, land-use class filter under the LULC layer
-- Sidebar with data panels
+- Map-first layout: the map fills the window; layers (left), land-use histograms (right) and the chart tabs
+  (bottom) are docked drawers above it. Each drawer collapses to an edge tab or header strip and can be resized by
+  dragging its inner edge; the header shrinks to a pill. Open state and sizes are kept in `localStorage`
+  (`beeview.ui.v1`); the circular-arrow button in the header resets the layout. The day slider in the chart drawer's
+  header works while the drawer is collapsed.
 - Run chips per hive and treatment variant (untreated, Dimethoate, thiacloprid, ...), compare tab with a treatment
   selector when several treated variants are selected
 - "New Simulation" panel: scenario and hive placement, simulation setup, GAP preset with an editable parameter card
