@@ -86,15 +86,42 @@ function MapPadding() {
     const m = map && map.getMap ? map.getMap() : null;
     if (!m) return;
     m.setPadding({ top: insets.top, left: insets.left, right: insets.right, bottom: insets.bottom });
+    m.triggerRepaint(); // deck.gl reads the padding on the next map render
   }, [map, insets]);
   return null;
 }
 
 function DeckGLOverlay(props) {
   const overlay = useControl(() => new DeckOverlay(props));
+  const { current: mapRef } = useMap();
   useEffect(() => {
     overlay.setProps(props);
   });
+  // deck.gl's canvas picks up a container resize only on its next redraw, so after the
+  // browser window is resized (maximised) its viewport can keep the old size while maplibre
+  // already uses the new one. Picking and rendering are then offset by half the size
+  // difference: hives were placed hundreds of pixels away from the click. Resize deck
+  // explicitly whenever maplibre resizes.
+  useEffect(() => {
+    const map = mapRef && mapRef.getMap ? mapRef.getMap() : null;
+    if (!map) return undefined;
+    const syncSize = () => {
+      const deck = overlay._deck;
+      if (!deck) return;
+      const { clientWidth, clientHeight } = map.getContainer();
+      if (clientWidth > 0 && clientHeight > 0) {
+        deck.setProps({ width: clientWidth, height: clientHeight });
+        map.triggerRepaint();
+      }
+    };
+    map.on('resize', syncSize);
+    map.on('load', syncSize);
+    syncSize();
+    return () => {
+      map.off('resize', syncSize);
+      map.off('load', syncSize);
+    };
+  }, [overlay, mapRef]);
   return null;
 }
 
