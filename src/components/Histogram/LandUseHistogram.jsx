@@ -7,6 +7,7 @@ import { max } from 'd3-array';
 import { format } from 'd3-format';
 import { selectMultipleFeatures } from '../../store/reducers/selectionReducer';
 import { getLevel1LandUseColor, getLevel2LandUseColor, getLevel3LandUseColor, getVegetationColor } from '../../utils/colorScales';
+import useContainerSize from '../../hooks/useContainerSize';
 
 // Helper function to abbreviate long labels
 const abbreviateLabel = (label, maxLength = 30) => {
@@ -17,19 +18,21 @@ const abbreviateLabel = (label, maxLength = 30) => {
 // Individual Histogram Component
 function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick }) {
   const svgRef = useRef(null);
+  // Measured container width so the bars follow the drawer when it is resized.
+  const [containerRef, { width: containerWidth }] = useContainerSize({ debounceMs: 80 });
   const selectedFeatureIds = useSelector(state => state.selection.selectedFeatureIds);
   const selectedSet = useMemo(() => new Set(selectedFeatureIds), [selectedFeatureIds]);
 
-  // Build the chart only when the data changes.
+  // Build the chart when the data or the available width changes.
   useEffect(() => {
-    if (!data || data.length === 0 || !svgRef.current) return;
+    if (!data || data.length === 0 || !svgRef.current || !containerWidth) return;
 
     // Clear previous chart
     select(svgRef.current).selectAll("*").remove();
 
     // Set up dimensions for horizontal layout
     const margin = { top: 20, right: 60, bottom: 30, left: 150 }; // Increased left margin for labels
-    const width = svgRef.current.clientWidth - margin.left - margin.right;
+    const width = Math.max(60, containerWidth - margin.left - margin.right);
     const chartHeight = height - margin.top - margin.bottom;
 
     // Create SVG
@@ -98,6 +101,7 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
           .style("border-radius", "4px")
           .style("pointer-events", "none")
           .style("font-size", "12px")
+          .style("z-index", "2000")
           .style("left", (event.pageX + 10) + "px")
           .style("top", (event.pageY - 10) + "px")
           .html(`
@@ -116,7 +120,7 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
         }
       });
 
-  }, [data, colorFunction, height, onBarClick]);
+  }, [data, colorFunction, height, onBarClick, containerWidth]);
 
   // Selection only changes bar opacity, so update that in place.
   useEffect(() => {
@@ -132,7 +136,7 @@ function SingleHistogram({ title, data, colorFunction, height = 200, onBarClick 
   }, [selectedSet, data]);
 
   return (
-    <div style={{ marginBottom: '20px' }}>
+    <div style={{ marginBottom: '20px' }} ref={containerRef}>
       <h4 style={{ margin: '10px 0', color: '#333', fontSize: '16px' }}>{title}</h4>
       <svg ref={svgRef} width="100%" height={height}></svg>
     </div>

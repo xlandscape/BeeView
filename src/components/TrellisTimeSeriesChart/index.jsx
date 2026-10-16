@@ -6,6 +6,7 @@ import { axisLeft, axisBottom } from 'd3-axis';
 import { line as d3Line, curveMonotoneX } from 'd3-shape';
 import { extent, group } from 'd3-array';
 import { setSelectedTimePoint } from '../../store/timeSlice';
+import useContainerSize from '../../hooks/useContainerSize';
 
 const TrellisTimeSeriesChart = ({
   seriesData, // Array of {data, dataKey, title, color, yAxisLabel}
@@ -15,6 +16,8 @@ const TrellisTimeSeriesChart = ({
 }) => {
   const dispatch = useDispatch();
   const svgRef = useRef();
+  // The chart fills its container (a resizable drawer); redraws are debounced.
+  const [containerRef, { width: containerWidth }] = useContainerSize({ debounceMs: 80 });
   const selectedTimePoint = useSelector(state => state.time.selectedTimePoint);
   const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, content: '' });
   // The x-scale of the last full draw, so the time cursor can be moved
@@ -25,12 +28,13 @@ const TrellisTimeSeriesChart = ({
 
   const drawChart = useCallback(() => {
     if (!seriesData || seriesData.length === 0) return;
+    if (!containerWidth) return; // not measured yet (hidden drawer)
 
     const svg = select(svgRef.current);
     svg.selectAll('*').remove();
 
     const margin = { top: 20, right: 80, bottom: 100, left: 80 };
-    const width = 900 - margin.left - margin.right;
+    const width = Math.max(360, containerWidth) - margin.left - margin.right;
 
     // Calculate heights for trellis panels
     const applicationTimelineHeight = 40;
@@ -250,8 +254,8 @@ const TrellisTimeSeriesChart = ({
           if (tooltipLines.length > 0) {
             setTooltip({
               show: true,
-              x: event.pageX + 10,
-              y: event.pageY - 10,
+              x: event.clientX + 10,
+              y: event.clientY - 10,
               content: `Day ${day}\n${tooltipLines.join('\n')}`
             });
           }
@@ -375,8 +379,8 @@ const TrellisTimeSeriesChart = ({
                 .join(', ');
               setTooltip({
                 show: true,
-                x: event.pageX + 10,
-                y: event.pageY - 10,
+                x: event.clientX + 10,
+                y: event.clientY - 10,
                 content: `Day ${day} • ${grp.runLabel}: ${count} application(s)\n${featuresList}`
               });
             })
@@ -401,7 +405,7 @@ const TrellisTimeSeriesChart = ({
       });
     }
 
-  }, [seriesData, height, startDate, dispatch, applicationData]);
+  }, [seriesData, height, startDate, dispatch, applicationData, containerWidth]);
 
   useEffect(() => {
     drawChart();
@@ -420,15 +424,15 @@ const TrellisTimeSeriesChart = ({
   }, [selectedTimePoint, seriesData]);
 
   return (
-    <div className="trellis-chart-container">
+    <div className="trellis-chart-container" ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       <svg ref={svgRef}></svg>
 
-      {/* Tooltip */}
+      {/* Tooltip: viewport coordinates, so it is right inside scrolling overlays */}
       {tooltip.show && (
         <div
           className="tooltip"
           style={{
-            position: 'absolute',
+            position: 'fixed',
             left: tooltip.x,
             top: tooltip.y,
             background: 'rgba(0, 0, 0, 0.8)',
@@ -437,7 +441,7 @@ const TrellisTimeSeriesChart = ({
             borderRadius: '4px',
             fontSize: '12px',
             pointerEvents: 'none',
-            zIndex: 1000,
+            zIndex: 2000,
             whiteSpace: 'pre-line'
           }}
         >

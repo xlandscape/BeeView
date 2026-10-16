@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { setSelectedTimePoint, setAvailableTimePoints } from '../../store/timeSlice';
+import { setSelectedTimePoint, setAvailableTimePoints, setDayCount } from '../../store/timeSlice';
 import { clearSelection } from '../../store/reducers/selectionReducer';
 import { loadForageMatrix } from '../../utils/forageMatrix';
 import { buildApiUrl } from '../../config/api';
@@ -44,6 +44,8 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
     });
     return days;
   }, [averageData, runReplicateData]);
+  // Shared with the day slider and any other day control.
+  useEffect(() => { dispatch(setDayCount(dayCount)); }, [dayCount, dispatch]);
   const effectiveRunIds = useMemo(() => (viewRunIds.length > 0 ? viewRunIds : [null]), [viewRunIds]);
   const exposureRunIds = useMemo(() => (viewRunIds.length > 0 ? viewRunIds : []), [viewRunIds]);
 
@@ -419,7 +421,9 @@ const TimeSeriesChart = ({ activeTab = 'nectar-pollen' }) => {
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (!selectedTimePoint) return;
-      
+      // Leave native arrow/Home/End behaviour to form controls (selects, inputs, the day slider).
+      if (event.target && event.target.closest && event.target.closest('input, select, textarea, [contenteditable="true"]')) return;
+
       switch (event.key) {
         case 'ArrowLeft':
           event.preventDefault();
